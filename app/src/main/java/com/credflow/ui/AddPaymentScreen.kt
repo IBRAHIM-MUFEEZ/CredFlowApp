@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.credflow.data.models.AccountKind
+import com.credflow.data.models.IndianAccountCatalog
 import com.credflow.viewmodel.MainViewModel
 import java.time.LocalDate
 
@@ -20,11 +22,23 @@ fun AddPaymentScreen(
 ) {
     val vm: MainViewModel = viewModel()
 
-    var selectedAccountId by remember { mutableStateOf("") }
+    var selectedKind by remember { mutableStateOf(AccountKind.CREDIT_CARD) }
+    var selectedAccountId by remember {
+        mutableStateOf(IndianAccountCatalog.creditCards.first().id)
+    }
     var amount by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
     val today = LocalDate.now().toString()
+    val accountOptions = remember(selectedKind) {
+        IndianAccountCatalog.optionsFor(selectedKind)
+    }
+    val selectedAccount = accountOptions.firstOrNull { it.id == selectedAccountId }
+        ?: accountOptions.first()
+
+    LaunchedEffect(selectedKind) {
+        selectedAccountId = IndianAccountCatalog.optionsFor(selectedKind).first().id
+    }
 
     Scaffold(
         topBar = {
@@ -52,17 +66,28 @@ fun AddPaymentScreen(
                 modifier = Modifier.padding(bottom = 20.dp)
             )
 
-            // Account ID
-            OutlinedTextField(
-                value = selectedAccountId,
-                onValueChange = { selectedAccountId = it },
-                label = { Text("Account ID") },
+            AccountKindDropdown(
+                selectedKind = selectedKind,
+                onKindSelected = { selectedKind = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp)
             )
 
-            // Amount
+            AccountOptionDropdown(
+                label = if (selectedKind == AccountKind.BANK_ACCOUNT) {
+                    "Bank Account"
+                } else {
+                    "Credit Card"
+                },
+                selectedOption = selectedAccount,
+                options = accountOptions,
+                onOptionSelected = { selectedAccountId = it.id },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -74,7 +99,6 @@ fun AddPaymentScreen(
                 leadingIcon = { Text("₹") }
             )
 
-            // Date (Auto)
             OutlinedTextField(
                 value = today,
                 onValueChange = {},
@@ -85,13 +109,14 @@ fun AddPaymentScreen(
                     .padding(bottom = 20.dp)
             )
 
-            // Save Button
             Button(
                 onClick = {
                     isLoading = true
 
                     vm.addPayment(
-                        accountId = selectedAccountId,
+                        accountId = selectedAccount.id,
+                        accountName = selectedAccount.name,
+                        accountKind = selectedKind,
                         amount = amount
                     )
 
@@ -101,7 +126,7 @@ fun AddPaymentScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
-                enabled = amount.isNotBlank() && selectedAccountId.isNotBlank()
+                enabled = amount.toDoubleOrNull() != null
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(

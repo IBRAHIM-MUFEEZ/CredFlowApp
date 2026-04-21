@@ -1,15 +1,96 @@
 package com.credflow.data.models
 
+enum class AccountKind(
+    val storageValue: String,
+    val label: String
+) {
+    BANK_ACCOUNT("bank_account", "Bank Account"),
+    CREDIT_CARD("credit_card", "Credit Card");
+
+    companion object {
+        fun fromStorage(value: String?): AccountKind {
+            return when (value?.lowercase()) {
+                "bank_account", "bank", "account" -> BANK_ACCOUNT
+                "credit_card", "credit", "card" -> CREDIT_CARD
+                else -> CREDIT_CARD
+            }
+        }
+    }
+}
+
+data class AccountOption(
+    val id: String,
+    val name: String,
+    val accountKind: AccountKind
+)
+
+object IndianAccountCatalog {
+    val bankAccounts = listOf(
+        AccountOption("bank_sbi", "State Bank of India (SBI)", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_hdfc", "HDFC Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_icici", "ICICI Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_axis", "Axis Bank", AccountKind.BANK_ACCOUNT)
+    )
+
+    val creditCards = listOf(
+        AccountOption("card_sbi", "SBI CARDS", AccountKind.CREDIT_CARD),
+        AccountOption("card_hdfc", "HDFC CREDIT CARD", AccountKind.CREDIT_CARD),
+        AccountOption("card_jupiter", "JUPITER CREDIT CARD", AccountKind.CREDIT_CARD)
+    )
+
+    val all = bankAccounts + creditCards
+
+    fun optionsFor(accountKind: AccountKind): List<AccountOption> {
+        return when (accountKind) {
+            AccountKind.BANK_ACCOUNT -> bankAccounts
+            AccountKind.CREDIT_CARD -> creditCards
+        }
+    }
+
+    fun optionById(id: String): AccountOption? {
+        return all.firstOrNull { it.id == id }
+    }
+}
+
 data class CardSummary(
     val id: String,
     val name: String,
+    val accountKind: AccountKind,
     val bill: Double,
     val pending: Double,
     val payable: Double
 )
 
+data class CustomerSummary(
+    val id: String,
+    val name: String,
+    val totalAmount: Double,
+    val creditDueAmount: Double,
+    val balance: Double,
+    val transactions: List<CustomerTransaction>
+)
+
+data class CustomerTransaction(
+    val id: String,
+    val customerId: String,
+    val accountId: String,
+    val accountName: String,
+    val accountKind: AccountKind,
+    val amount: Double,
+    val transactionDate: String,
+    val dueDate: String
+)
+
+data class AppData(
+    val accounts: List<CardSummary>,
+    val customers: List<CustomerSummary>
+)
+
 data class Transaction(
     val accountId: String = "",
+    val accountName: String = "",
+    val accountType: String = "",
+    val customerName: String = "",
     val amount: Double = 0.0,
     val givenDate: String = "",
     val dueDate: String = ""
@@ -17,6 +98,8 @@ data class Transaction(
 
 data class Payment(
     val accountId: String = "",
+    val accountName: String = "",
+    val accountType: String = "",
     val amount: Double = 0.0,
     val date: String = ""
 )

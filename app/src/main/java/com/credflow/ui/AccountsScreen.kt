@@ -1,62 +1,89 @@
 package com.credflow.ui
-import com.credflow.data.models.CardSummary
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.credflow.data.models.AccountKind
+import com.credflow.data.models.CardSummary
 import com.credflow.viewmodel.MainViewModel
 
 @Composable
-fun AccountsScreen(vm: MainViewModel = viewModel()) {
-
+fun AccountsScreen(
+    vm: MainViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
     val cards by vm.cards.collectAsState()
+    val creditCards = cards.filter { it.accountKind == AccountKind.CREDIT_CARD }
+    val bankAccounts = cards.filter { it.accountKind == AccountKind.BANK_ACCOUNT }
 
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { /* Navigate to add account */ }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Accounts",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (cards.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add Account")
+                Text("No account totals yet. Add a customer entry to begin.")
             }
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "💳 Accounts",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            if (cards.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("No accounts yet. Add one to get started!")
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    AccountSectionTitle("Credit Cards")
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(cards) { card ->
+
+                if (creditCards.isEmpty()) {
+                    item {
+                        Text("No credit card totals yet.")
+                    }
+                } else {
+                    items(creditCards, key = { it.id }) { card ->
+                        AccountCard(card)
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AccountSectionTitle("Bank Accounts")
+                }
+
+                if (bankAccounts.isEmpty()) {
+                    item {
+                        Text("No bank account totals yet.")
+                    }
+                } else {
+                    items(bankAccounts, key = { it.id }) { card ->
                         AccountCard(card)
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+fun AccountSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+    )
 }
 
 @Composable
@@ -76,7 +103,12 @@ fun AccountCard(card: CardSummary) {
                 text = card.name,
                 style = MaterialTheme.typography.titleMedium
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = card.accountKind.label,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -84,7 +116,7 @@ fun AccountCard(card: CardSummary) {
             ) {
                 Column {
                     Text(
-                        "Bill Amount",
+                        "Total Used",
                         style = MaterialTheme.typography.labelSmall
                     )
                     Text(
@@ -94,7 +126,7 @@ fun AccountCard(card: CardSummary) {
                 }
                 Column {
                     Text(
-                        "Pending",
+                        "Paid",
                         style = MaterialTheme.typography.labelSmall
                     )
                     Text(
@@ -104,7 +136,7 @@ fun AccountCard(card: CardSummary) {
                 }
                 Column {
                     Text(
-                        "Payable",
+                        "Balance",
                         style = MaterialTheme.typography.labelSmall
                     )
                     Text(

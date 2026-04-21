@@ -28,10 +28,12 @@ fun DashboardScreen(
     Scaffold(
 
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { navController.navigate("addTransaction") }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
+            if (currentScreen == DashboardTab.HOME || currentScreen == DashboardTab.CUSTOMERS) {
+                FloatingActionButton(
+                    onClick = { navController.navigate("addTransaction") }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Customer")
+                }
             }
         },
 
@@ -72,9 +74,9 @@ fun DashboardScreen(
 
         when (currentScreen) {
             DashboardTab.HOME -> HomeScreen(cards, Modifier.padding(padding))
-            DashboardTab.ACCOUNTS -> AccountsScreen(vm)
-            DashboardTab.CUSTOMERS -> CustomersScreen(vm)
-            DashboardTab.ANALYTICS -> AnalyticsScreen(vm)
+            DashboardTab.ACCOUNTS -> AccountsScreen(vm, Modifier.padding(padding))
+            DashboardTab.CUSTOMERS -> CustomersScreen(vm, Modifier.padding(padding))
+            DashboardTab.ANALYTICS -> AnalyticsScreen(vm, Modifier.padding(padding))
         }
     }
 }
@@ -87,12 +89,12 @@ fun HomeScreen(
 
     Column(modifier = modifier.padding(16.dp)) {
 
-        Text("💳 CredFlow Dashboard", style = MaterialTheme.typography.headlineSmall)
+        Text("CredFlow Dashboard", style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(16.dp))
 
         if (cards.isEmpty()) {
-            Text("No cards yet. Add transactions to begin.")
+            Text("No account totals yet. Add a customer entry to begin.")
         } else {
             cards.forEach {
                 Card(
@@ -102,9 +104,10 @@ fun HomeScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(it.name)
-                        Text("Bill: ₹${it.bill}")
-                        Text("Pending: ₹${it.pending}")
-                        Text("Payable: ₹${it.payable}")
+                        Text(it.accountKind.label)
+                        Text("Total Used: ₹${it.bill}")
+                        Text("Paid: ₹${it.pending}")
+                        Text("Balance: ₹${it.payable}")
                     }
                 }
             }

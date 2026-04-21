@@ -11,12 +11,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.viewmodel.MainViewModel
 import com.credflow.data.models.CardSummary
 @Composable
-fun AnalyticsScreen(vm: MainViewModel = viewModel()) {
+fun AnalyticsScreen(
+    vm: MainViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
 
     val cards by vm.cards.collectAsState()
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
@@ -31,7 +34,7 @@ fun AnalyticsScreen(vm: MainViewModel = viewModel()) {
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No data available. Add some transactions to see analytics.")
+                Text("No data available. Add customer entries to see analytics.")
             }
         } else {
             LazyColumn(
@@ -59,9 +62,9 @@ fun AnalyticsScreen(vm: MainViewModel = viewModel()) {
 
 @Composable
 fun SummaryCard(cards: List<CardSummary>) {
-    val totalBill = cards.sumOf { it.bill }
-    val totalPending = cards.sumOf { it.pending }
-    val totalPayable = cards.sumOf { it.payable }
+    val totalUsed = cards.sumOf { it.bill }
+    val totalPaid = cards.sumOf { it.pending }
+    val totalBalance = cards.sumOf { it.payable }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -74,11 +77,11 @@ fun SummaryCard(cards: List<CardSummary>) {
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            StatRow("Total Bill Amount", "₹${String.format("%.2f", totalBill)}")
+            StatRow("Total Used", "₹${String.format("%.2f", totalUsed)}")
             Spacer(modifier = Modifier.height(8.dp))
-            StatRow("Total Pending", "₹${String.format("%.2f", totalPending)}")
+            StatRow("Total Paid", "₹${String.format("%.2f", totalPaid)}")
             Spacer(modifier = Modifier.height(8.dp))
-            StatRow("Total Payable", "₹${String.format("%.2f", totalPayable)}")
+            StatRow("Total Balance", "₹${String.format("%.2f", totalBalance)}")
         }
     }
 }
@@ -91,7 +94,7 @@ fun BillBreakdownCard(cards: List<CardSummary>) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Bill Breakdown",
+                "Usage Breakdown",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
@@ -119,7 +122,7 @@ fun PendingAmountCard(cards: List<CardSummary>) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Pending Amounts",
+                "Paid Amounts",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
@@ -147,7 +150,7 @@ fun PayableAmountCard(cards: List<CardSummary>) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Payable Amounts",
+                "Outstanding Balances",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
