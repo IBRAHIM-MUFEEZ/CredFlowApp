@@ -18,10 +18,71 @@ class FirebaseRepository {
     suspend fun addCustomer(name: String) {
         val data = hashMapOf(
             "name" to name,
-            "creditDueAmount" to 0.0
+            "creditDueAmount" to 0.0,
+            "isDeleted" to false
         )
 
         db.collection("customers").add(data).await()
+    }
+
+    suspend fun deleteCustomer(
+        customerId: String,
+        customerName: String
+    ) {
+        db.collection("customers")
+            .document(customerId)
+            .set(
+                mapOf(
+                    "name" to customerName,
+                    "isDeleted" to true,
+                    "deletedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            )
+            .await()
+    }
+
+    suspend fun restoreCustomer(customerId: String) {
+        db.collection("customers")
+            .document(customerId)
+            .set(
+                mapOf(
+                    "isDeleted" to false,
+                    "deletedAt" to FieldValue.delete()
+                ),
+                SetOptions.merge()
+            )
+            .await()
+    }
+
+    suspend fun permanentlyDeleteCustomer(
+        customerId: String,
+        customerName: String
+    ) {
+        val customerRef = db.collection("customers").document(customerId)
+        val transactionSnapshot = db.collection("transactions")
+            .whereEqualTo("customerId", customerId)
+            .get()
+            .await()
+        val legacyTransactionSnapshot = db.collection("transactions")
+            .whereEqualTo("customerName", customerName)
+            .get()
+            .await()
+
+        val batch = db.batch()
+        val deletedTransactionIds = mutableSetOf<String>()
+        batch.delete(customerRef)
+        transactionSnapshot.documents.forEach { transaction ->
+            if (deletedTransactionIds.add(transaction.id)) {
+                batch.delete(transaction.reference)
+            }
+        }
+        legacyTransactionSnapshot.documents.forEach { transaction ->
+            if (deletedTransactionIds.add(transaction.id)) {
+                batch.delete(transaction.reference)
+            }
+        }
+        batch.commit().await()
     }
 
     suspend fun updateCustomerDueAmount(
@@ -44,16 +105,17 @@ class FirebaseRepository {
     // ✅ SAVE TRANSACTION
     suspend fun addTransaction(
         customerId: String,
+        transactionName: String,
         accountId: String,
         accountName: String,
         accountKind: AccountKind,
         customerName: String,
         amount: Double,
-        transactionDate: String,
-        dueDate: String
+        transactionDate: String
     ) {
         val data = mutableMapOf<String, Any>(
             "customerId" to customerId,
+            "transactionName" to transactionName,
             "accountId" to accountId,
             "accountName" to accountName,
             "accountType" to accountKind.storageValue,
@@ -63,36 +125,28 @@ class FirebaseRepository {
             "givenDate" to transactionDate
         )
 
-        if (accountKind == AccountKind.CREDIT_CARD && dueDate.isNotBlank()) {
-            data["dueDate"] = dueDate
-        }
-
         db.collection("transactions").add(data).await()
     }
 
     suspend fun updateTransaction(
         transactionId: String,
+        transactionName: String,
         accountId: String,
         accountName: String,
         accountKind: AccountKind,
         amount: Double,
-        transactionDate: String,
-        dueDate: String
+        transactionDate: String
     ) {
         val data = mutableMapOf<String, Any>(
+            "transactionName" to transactionName,
             "accountId" to accountId,
             "accountName" to accountName,
             "accountType" to accountKind.storageValue,
             "amount" to amount,
             "transactionDate" to transactionDate,
-            "givenDate" to transactionDate
+            "givenDate" to transactionDate,
+            "dueDate" to FieldValue.delete()
         )
-
-        data["dueDate"] = if (accountKind == AccountKind.CREDIT_CARD && dueDate.isNotBlank()) {
-            dueDate
-        } else {
-            FieldValue.delete()
-        }
 
         db.collection("transactions")
             .document(transactionId)
@@ -183,20 +237,31 @@ class FirebaseRepository {
         }
 
         val customerTotals = linkedMapOf<String, RunningCustomerTotal>()
+        val deletedCustomerTotals = linkedMapOf<String, RunningCustomerTotal>()
         val customerIdsByName = mutableMapOf<String, String>()
+        val deletedCustomerIds = mutableSetOf<String>()
 
         customers.forEach { customer ->
             val name = customer.getString("name").orEmpty()
             if (name.isBlank()) return@forEach
 
-            customerTotals[customer.id] = RunningCustomerTotal(
+            val isDeleted = customer.getBoolean("isDeleted") == true
+            val targetMap = if (isDeleted) deletedCustomerTotals else customerTotals
+
+            targetMap[customer.id] = RunningCustomerTotal(
                 id = customer.id,
                 name = name,
                 creditDueAmount = customer.getDouble("creditDueAmount")
                     ?: customer.getDouble("dueAmount")
-                    ?: 0.0
+                    ?: 0.0,
+                isDeleted = isDeleted
             )
-            customerIdsByName[name.trim().lowercase()] = customer.id
+
+            if (isDeleted) {
+                deletedCustomerIds.add(customer.id)
+            } else {
+                customerIdsByName[name.trim().lowercase()] = customer.id
+            }
         }
 
         transactions.forEach { transaction ->
@@ -212,15 +277,6 @@ class FirebaseRepository {
                 ?: fallbackOption?.name
                 ?: accountId
 
-            val accountTotal = accountTotals.getOrPut(accountId) {
-                RunningAccountTotal(
-                    id = accountId,
-                    name = accountName,
-                    accountKind = accountKind
-                )
-            }
-            accountTotal.totalUsed += amount
-
             val customerName = transaction.getString("customerName").orEmpty()
             if (customerName.isNotBlank()) {
                 val storedCustomerId = transaction.getString("customerId").orEmpty()
@@ -229,10 +285,24 @@ class FirebaseRepository {
                         ?: legacyCustomerId(customerName)
                 }
 
-                val customerTotal = customerTotals.getOrPut(customerId) {
+                val isDeleted = customerId in deletedCustomerIds
+                if (!isDeleted) {
+                    val accountTotal = accountTotals.getOrPut(accountId) {
+                        RunningAccountTotal(
+                            id = accountId,
+                            name = accountName,
+                            accountKind = accountKind
+                        )
+                    }
+                    accountTotal.totalUsed += amount
+                }
+
+                val targetCustomers = if (isDeleted) deletedCustomerTotals else customerTotals
+                val customerTotal = targetCustomers.getOrPut(customerId) {
                     RunningCustomerTotal(
                         id = customerId,
                         name = customerName,
+                        isDeleted = isDeleted
                     )
                 }
                 customerTotal.totalAmount += amount
@@ -241,14 +311,16 @@ class FirebaseRepository {
                     CustomerTransaction(
                         id = transaction.id,
                         customerId = customerId,
+                        name = transaction.getString("transactionName")
+                            ?: transaction.getString("name")
+                            ?: accountName,
                         accountId = accountId,
                         accountName = accountName,
                         accountKind = accountKind,
                         amount = amount,
                         transactionDate = transaction.getString("transactionDate")
                             ?: transaction.getString("givenDate")
-                            ?: "",
-                        dueDate = transaction.getString("dueDate").orEmpty()
+                            ?: ""
                     )
                 )
             }
@@ -289,19 +361,29 @@ class FirebaseRepository {
         }
 
         val customerSummaries = customerTotals.values.map { total ->
-            CustomerSummary(
-                id = total.id,
-                name = total.name,
-                totalAmount = total.totalAmount,
-                creditDueAmount = total.creditDueAmount,
-                balance = (total.totalAmount - total.creditDueAmount).coerceAtLeast(0.0),
-                transactions = total.transactions.sortedByDescending { it.transactionDate }
-            )
+            total.toSummary()
+        }
+
+        val deletedCustomerSummaries = deletedCustomerTotals.values.map { total ->
+            total.toSummary()
         }
 
         return AppData(
             accounts = accountSummaries,
-            customers = customerSummaries
+            customers = customerSummaries,
+            deletedCustomers = deletedCustomerSummaries
+        )
+    }
+
+    private fun RunningCustomerTotal.toSummary(): CustomerSummary {
+        return CustomerSummary(
+            id = id,
+            name = name,
+            totalAmount = totalAmount,
+            creditDueAmount = creditDueAmount,
+            balance = (totalAmount - creditDueAmount).coerceAtLeast(0.0),
+            transactions = transactions.sortedByDescending { it.transactionDate },
+            isDeleted = isDeleted
         )
     }
 
@@ -318,7 +400,8 @@ class FirebaseRepository {
         val name: String,
         var creditDueAmount: Double = 0.0,
         var totalAmount: Double = 0.0,
-        val transactions: MutableList<CustomerTransaction> = mutableListOf()
+        val transactions: MutableList<CustomerTransaction> = mutableListOf(),
+        val isDeleted: Boolean = false
     )
 
     private fun legacyCustomerId(customerName: String): String {

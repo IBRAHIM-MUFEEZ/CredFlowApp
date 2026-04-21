@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,13 +23,13 @@ fun DashboardScreen(
     vm: MainViewModel = viewModel()
 ) {
 
-    var currentScreen by remember { mutableStateOf(DashboardTab.HOME) }
+    var currentScreen by rememberSaveable { mutableStateOf(DashboardTab.HOME) }
     val cards by vm.cards.collectAsState()
 
     Scaffold(
 
         floatingActionButton = {
-            if (currentScreen == DashboardTab.HOME || currentScreen == DashboardTab.CUSTOMERS) {
+            if (currentScreen == DashboardTab.CUSTOMERS) {
                 FloatingActionButton(
                     onClick = { navController.navigate("addTransaction") }
                 ) {

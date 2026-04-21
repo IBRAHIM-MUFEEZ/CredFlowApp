@@ -67,33 +67,37 @@ data class CustomerSummary(
     val totalAmount: Double,
     val creditDueAmount: Double,
     val balance: Double,
-    val transactions: List<CustomerTransaction>
+    val transactions: List<CustomerTransaction>,
+    val isDeleted: Boolean = false
 )
 
 data class CustomerTransaction(
     val id: String,
     val customerId: String,
+    val name: String,
     val accountId: String,
     val accountName: String,
     val accountKind: AccountKind,
     val amount: Double,
-    val transactionDate: String,
-    val dueDate: String
+    val transactionDate: String
 )
 
 data class AppData(
     val accounts: List<CardSummary>,
-    val customers: List<CustomerSummary>
+    val customers: List<CustomerSummary>,
+    val deletedCustomers: List<CustomerSummary>
 )
 
 data class Transaction(
+    val customerId: String = "",
+    val transactionName: String = "",
     val accountId: String = "",
     val accountName: String = "",
     val accountType: String = "",
     val customerName: String = "",
     val amount: Double = 0.0,
-    val givenDate: String = "",
-    val dueDate: String = ""
+    val transactionDate: String = "",
+    val givenDate: String = ""
 )
 
 data class Payment(

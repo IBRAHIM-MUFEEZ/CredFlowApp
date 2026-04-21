@@ -22,10 +22,14 @@ class MainViewModel(
     private val _customers = MutableStateFlow<List<CustomerSummary>>(emptyList())
     val customers: StateFlow<List<CustomerSummary>> = _customers.asStateFlow()
 
+    private val _deletedCustomers = MutableStateFlow<List<CustomerSummary>>(emptyList())
+    val deletedCustomers: StateFlow<List<CustomerSummary>> = _deletedCustomers.asStateFlow()
+
     init {
         repository.listenAllData { appData ->
             _cards.value = appData.accounts
             _customers.value = appData.customers
+            _deletedCustomers.value = appData.deletedCustomers
         }
     }
 
@@ -35,6 +39,36 @@ class MainViewModel(
 
         viewModelScope.launch {
             repository.addCustomer(trimmedName)
+        }
+    }
+
+    fun deleteCustomer(
+        customerId: String,
+        customerName: String
+    ) {
+        viewModelScope.launch {
+            repository.deleteCustomer(
+                customerId = customerId,
+                customerName = customerName
+            )
+        }
+    }
+
+    fun restoreCustomer(customerId: String) {
+        viewModelScope.launch {
+            repository.restoreCustomer(customerId)
+        }
+    }
+
+    fun permanentlyDeleteCustomer(
+        customerId: String,
+        customerName: String
+    ) {
+        viewModelScope.launch {
+            repository.permanentlyDeleteCustomer(
+                customerId = customerId,
+                customerName = customerName
+            )
         }
     }
 
@@ -56,50 +90,50 @@ class MainViewModel(
 
     fun addTransaction(
         customerId: String,
+        transactionName: String,
         customerName: String,
         accountId: String,
         accountName: String,
         accountKind: AccountKind,
         amount: String,
-        transactionDate: String,
-        dueDate: String
+        transactionDate: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
 
         viewModelScope.launch {
             repository.addTransaction(
                 customerId = customerId,
+                transactionName = transactionName.trim(),
                 accountId = accountId,
                 accountName = accountName,
                 accountKind = accountKind,
                 customerName = customerName.trim(),
                 amount = parsedAmount,
-                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() },
-                dueDate = dueDate
+                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() }
             )
         }
     }
 
     fun updateTransaction(
         transactionId: String,
+        transactionName: String,
         accountId: String,
         accountName: String,
         accountKind: AccountKind,
         amount: String,
-        transactionDate: String,
-        dueDate: String
+        transactionDate: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
 
         viewModelScope.launch {
             repository.updateTransaction(
                 transactionId = transactionId,
+                transactionName = transactionName.trim(),
                 accountId = accountId,
                 accountName = accountName,
                 accountKind = accountKind,
                 amount = parsedAmount,
-                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() },
-                dueDate = dueDate
+                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() }
             )
         }
     }
