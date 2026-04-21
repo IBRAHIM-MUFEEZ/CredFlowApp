@@ -3,10 +3,12 @@ package com.credflow.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.data.models.AccountKind
@@ -54,7 +56,17 @@ fun AccountsScreen(
                     }
                 } else {
                     items(creditCards, key = { it.id }) { card ->
-                        AccountCard(card)
+                        AccountCard(
+                            card = card,
+                            onUpdateCreditDue = { amount, dueDate ->
+                                vm.updateCreditCardDue(
+                                    accountId = card.id,
+                                    accountName = card.name,
+                                    amount = amount,
+                                    dueDate = dueDate
+                                )
+                            }
+                        )
                     }
                 }
 
@@ -69,7 +81,7 @@ fun AccountsScreen(
                     }
                 } else {
                     items(bankAccounts, key = { it.id }) { card ->
-                        AccountCard(card)
+                        AccountCard(card = card)
                     }
                 }
             }
@@ -87,7 +99,12 @@ fun AccountSectionTitle(title: String) {
 }
 
 @Composable
-fun AccountCard(card: CardSummary) {
+fun AccountCard(
+    card: CardSummary,
+    onUpdateCreditDue: ((amount: String, dueDate: String) -> Unit)? = null
+) {
+    var showDueEditor by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -108,6 +125,16 @@ fun AccountCard(card: CardSummary) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp)
             )
+
+            if (card.accountKind == AccountKind.CREDIT_CARD && onUpdateCreditDue != null) {
+                TextButton(
+                    onClick = { showDueEditor = true },
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text("Edit Card Due")
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(
@@ -145,6 +172,115 @@ fun AccountCard(card: CardSummary) {
                     )
                 }
             }
+
+            if (card.accountKind == AccountKind.CREDIT_CARD) {
+                CreditCardDueStatus(card)
+            }
         }
     }
+
+    if (showDueEditor && onUpdateCreditDue != null) {
+        CreditCardDueDialog(
+            card = card,
+            onDismiss = { showDueEditor = false },
+            onSave = { amount, dueDate ->
+                onUpdateCreditDue(amount, dueDate)
+                showDueEditor = false
+            }
+        )
+    }
+}
+
+@Composable
+fun CreditCardDueStatus(card: CardSummary) {
+    val remainingDue = card.dueAmount - card.bill
+    val message = when {
+        card.dueAmount <= 0.0 -> "No card due amount set."
+        remainingDue > 0.0 -> "You owe ₹${String.format("%.2f", remainingDue)} to this credit card."
+        remainingDue < 0.0 -> "You have overpaid ₹${String.format("%.2f", kotlin.math.abs(remainingDue))} for this credit card."
+        else -> "This credit card due is fully covered."
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Divider()
+
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Text(
+            text = "Credit Card Due",
+            style = MaterialTheme.typography.titleSmall
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Due Amount: ₹${String.format("%.2f", card.dueAmount)}",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        if (card.dueDate.isNotBlank()) {
+            Text(
+                text = "Due Date: ${card.dueDate}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Text(
+            text = "Customer Used: ₹${String.format("%.2f", card.bill)}",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+fun CreditCardDueDialog(
+    card: CardSummary,
+    onDismiss: () -> Unit,
+    onSave: (amount: String, dueDate: String) -> Unit
+) {
+    var dueAmount by remember(card.id, card.dueAmount) {
+        mutableStateOf(card.dueAmount.takeIf { it > 0.0 }?.toString().orEmpty())
+    }
+    var dueDate by remember(card.id, card.dueDate) {
+        mutableStateOf(card.dueDate)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit ${card.name} Due") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = dueAmount,
+                    onValueChange = { dueAmount = it },
+                    label = { Text("Credit Card Due Amount") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    leadingIcon = { Text("₹") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = dueDate,
+                    onValueChange = { dueDate = it },
+                    label = { Text("Due Date (YYYY-MM-DD)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(dueAmount, dueDate) },
+                enabled = dueAmount.toDoubleOrNull() != null
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

@@ -58,7 +58,9 @@ data class CardSummary(
     val accountKind: AccountKind,
     val bill: Double,
     val pending: Double,
-    val payable: Double
+    val payable: Double,
+    val dueAmount: Double = 0.0,
+    val dueDate: String = ""
 )
 
 data class CustomerSummary(

@@ -561,7 +561,8 @@ fun TransactionEditorDialog(
 
                 OutlinedTextField(
                     value = amountExpression,
-                    onValueChange = { amountExpression = it },
+                    onValueChange = {},
+                    readOnly = true,
                     label = { Text("Amount / Calculator") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     leadingIcon = { Text("₹") },

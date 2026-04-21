@@ -102,6 +102,27 @@ class FirebaseRepository {
             .await()
     }
 
+    suspend fun updateCreditCardDue(
+        accountId: String,
+        accountName: String,
+        dueAmount: Double,
+        dueDate: String
+    ) {
+        db.collection("accounts")
+            .document(accountId)
+            .set(
+                mapOf(
+                    "name" to accountName,
+                    "accountType" to AccountKind.CREDIT_CARD.storageValue,
+                    "type" to AccountKind.CREDIT_CARD.storageValue,
+                    "dueAmount" to dueAmount,
+                    "dueDate" to dueDate
+                ),
+                SetOptions.merge()
+            )
+            .await()
+    }
+
     // ✅ SAVE TRANSACTION
     suspend fun addTransaction(
         customerId: String,
@@ -225,15 +246,16 @@ class FirebaseRepository {
             val accountKind = AccountKind.fromStorage(
                 account.getString("accountType") ?: account.getString("type")
             )
-            accountTotals.putIfAbsent(
-                account.id,
+            val accountTotal = accountTotals.getOrPut(account.id) {
                 RunningAccountTotal(
                     id = account.id,
                     name = name,
-                    accountKind = accountKind,
-                    totalUsed = account.getDouble("bill") ?: 0.0
+                    accountKind = accountKind
                 )
-            )
+            }
+            accountTotal.totalUsed += account.getDouble("bill") ?: 0.0
+            accountTotal.dueAmount = account.getDouble("dueAmount") ?: 0.0
+            accountTotal.dueDate = account.getString("dueDate").orEmpty()
         }
 
         val customerTotals = linkedMapOf<String, RunningCustomerTotal>()
@@ -356,7 +378,9 @@ class FirebaseRepository {
                 accountKind = total.accountKind,
                 bill = total.totalUsed,
                 pending = total.totalPaid,
-                payable = (total.totalUsed - total.totalPaid).coerceAtLeast(0.0)
+                payable = (total.totalUsed - total.totalPaid).coerceAtLeast(0.0),
+                dueAmount = total.dueAmount,
+                dueDate = total.dueDate
             )
         }
 
@@ -392,7 +416,9 @@ class FirebaseRepository {
         val name: String,
         val accountKind: AccountKind,
         var totalUsed: Double = 0.0,
-        var totalPaid: Double = 0.0
+        var totalPaid: Double = 0.0,
+        var dueAmount: Double = 0.0,
+        var dueDate: String = ""
     )
 
     private data class RunningCustomerTotal(

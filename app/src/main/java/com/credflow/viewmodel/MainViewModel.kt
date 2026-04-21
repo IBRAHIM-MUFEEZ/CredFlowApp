@@ -88,6 +88,24 @@ class MainViewModel(
         }
     }
 
+    fun updateCreditCardDue(
+        accountId: String,
+        accountName: String,
+        amount: String,
+        dueDate: String
+    ) {
+        val parsedAmount = amount.toDoubleOrNull() ?: return
+
+        viewModelScope.launch {
+            repository.updateCreditCardDue(
+                accountId = accountId,
+                accountName = accountName,
+                dueAmount = parsedAmount,
+                dueDate = dueDate
+            )
+        }
+    }
+
     fun addTransaction(
         customerId: String,
         transactionName: String,
