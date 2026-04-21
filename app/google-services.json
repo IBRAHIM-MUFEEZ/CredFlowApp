@@ -8,9 +8,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:109696540700:android:a6d6289171fa78bfd3bfd9",
+        "mobilesdk_app_id": "1:109696540700:android:6e878e42db9dc37bd3bfd9",
         "android_client_info": {
-          "package_name": "com.example.credflowapp"
+          "package_name": "com.credflow"
         }
       },
       "oauth_client": [

@@ -8,7 +8,8 @@ import com.credflow.ui.DashboardScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        
+        // This will now successfully launch your Dashboard instead of "Hello Android"
         setContent {
             DashboardScreen()
         }

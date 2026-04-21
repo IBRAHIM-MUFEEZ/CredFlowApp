@@ -1,6 +1,7 @@
 package com.credflow.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -10,19 +11,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddTransactionScreen(
+fun AddPaymentScreen(
     onNavigateBack: () -> Unit = {}
 ) {
     var selectedAccountId by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Transaction") },
+                title = { Text("Add Payment") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
@@ -37,10 +38,10 @@ fun AddTransactionScreen(
                 .padding(paddingValues)
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Record a Transaction",
+                text = "Record a Payment",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
@@ -60,35 +61,25 @@ fun AddTransactionScreen(
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("Transaction Amount") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                keyboardType = KeyboardType.Decimal,
-                leadingIcon = { Text("₹") }
-            )
-
-            // Description Input
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description (Optional)") },
+                label = { Text("Payment Amount") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 24.dp),
-                minLines = 3
+                // FIXED: Wrapped in KeyboardOptions
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                leadingIcon = { Text("₹") }
             )
 
             // Submit Button
             Button(
                 onClick = {
                     isLoading = true
-                    // Handle transaction submission
+                    // Handle payment submission
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
-                enabled = !isLoading && amount.isNotBlank() && selectedAccountId.isNotBlank()
+                enabled = !isLoading && amount.isNotBlank()
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -96,7 +87,7 @@ fun AddTransactionScreen(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Add Transaction")
+                    Text("Record Payment")
                 }
             }
         }

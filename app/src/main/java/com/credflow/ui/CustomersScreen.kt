@@ -59,6 +59,7 @@ fun CustomersScreen(vm: MainViewModel = viewModel()) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerCard(card: com.credflow.data.models.CardSummary) {
     Card(
