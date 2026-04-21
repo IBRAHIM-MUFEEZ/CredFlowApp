@@ -9,7 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.viewmodel.MainViewModel
-
+import com.credflow.data.models.CardSummary
 @Composable
 fun AnalyticsScreen(vm: MainViewModel = viewModel()) {
 
@@ -58,7 +58,7 @@ fun AnalyticsScreen(vm: MainViewModel = viewModel()) {
 }
 
 @Composable
-fun SummaryCard(cards: List<com.credflow.data.models.CardSummary>) {
+fun SummaryCard(cards: List<CardSummary>) {
     val totalBill = cards.sumOf { it.bill }
     val totalPending = cards.sumOf { it.pending }
     val totalPayable = cards.sumOf { it.payable }
@@ -84,7 +84,7 @@ fun SummaryCard(cards: List<com.credflow.data.models.CardSummary>) {
 }
 
 @Composable
-fun BillBreakdownCard(cards: List<com.credflow.data.models.CardSummary>) {
+fun BillBreakdownCard(cards: List<CardSummary>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -112,7 +112,7 @@ fun BillBreakdownCard(cards: List<com.credflow.data.models.CardSummary>) {
 }
 
 @Composable
-fun PendingAmountCard(cards: List<com.credflow.data.models.CardSummary>) {
+fun PendingAmountCard(cards: List<CardSummary>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -140,7 +140,7 @@ fun PendingAmountCard(cards: List<com.credflow.data.models.CardSummary>) {
 }
 
 @Composable
-fun PayableAmountCard(cards: List<com.credflow.data.models.CardSummary>) {
+fun PayableAmountCard(cards: List<CardSummary>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)

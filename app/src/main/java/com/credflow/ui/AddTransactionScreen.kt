@@ -10,16 +10,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.credflow.viewmodel.MainViewModel
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTransactionScreen(
     onNavigateBack: () -> Unit = {}
 ) {
+    val vm: MainViewModel = viewModel()
+
     var selectedAccountId by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    var dueDate by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+
+    val today = LocalDate.now().toString()
 
     Scaffold(
         topBar = {
@@ -33,65 +40,82 @@ fun AddTransactionScreen(
             )
         }
     ) { paddingValues ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
+
             Text(
                 text = "Record a Transaction",
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(bottom = 24.dp)
+                modifier = Modifier.padding(bottom = 20.dp)
             )
 
-            // Account Selection
+            // Account ID (temporary input - later dropdown)
             OutlinedTextField(
                 value = selectedAccountId,
                 onValueChange = { selectedAccountId = it },
-                label = { Text("Select Account") },
+                label = { Text("Account ID") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                readOnly = true
+                    .padding(bottom = 12.dp)
             )
 
-            // Amount Input
+            // Amount
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("Transaction Amount") },
+                label = { Text("Amount") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                // FIXED: Wrapped in KeyboardOptions
+                    .padding(bottom = 12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 leadingIcon = { Text("₹") }
             )
 
-            // Description Input
+            // Given Date (Auto)
             OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description (Optional)") },
+                value = today,
+                onValueChange = {},
+                label = { Text("Given Date") },
+                readOnly = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 24.dp),
-                minLines = 3
+                    .padding(bottom = 12.dp)
             )
 
-            // Submit Button
+            // Due Date
+            OutlinedTextField(
+                value = dueDate,
+                onValueChange = { dueDate = it },
+                label = { Text("Due Date (YYYY-MM-DD)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp)
+            )
+
+            // Save Button
             Button(
                 onClick = {
                     isLoading = true
-                    // Handle transaction submission
+
+                    vm.addTransaction(
+                        accountId = selectedAccountId,
+                        amount = amount,
+                        dueDate = dueDate
+                    )
+
+                    isLoading = false
+                    onNavigateBack()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
-                enabled = !isLoading && amount.isNotBlank() && selectedAccountId.isNotBlank()
+                enabled = amount.isNotBlank() && selectedAccountId.isNotBlank()
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -99,7 +123,7 @@ fun AddTransactionScreen(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Add Transaction")
+                    Text("Save Transaction")
                 }
             }
         }

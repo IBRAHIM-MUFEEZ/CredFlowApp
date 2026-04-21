@@ -1,65 +1,37 @@
-package com.credflow.viewmodel
+package com.credflow
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.credflow.data.models.CardSummary
-import com.credflow.data.repository.FirebaseRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.navigation.compose.*
+import com.credflow.ui.*
 
-class MainViewModel : ViewModel() {
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-    private val repo = FirebaseRepository()
+        setContent {
 
-    private val _cards = MutableStateFlow<List<CardSummary>>(emptyList())
-    val cards: StateFlow<List<CardSummary>> = _cards
+            val navController = rememberNavController()
 
-    init {
-        loadData()
-    }
+            NavHost(navController = navController, startDestination = "dashboard") {
 
-    private fun loadData() {
-        viewModelScope.launch {
-
-            val accounts = repo.getAccounts()
-            val transactions = repo.getTransactions()
-            val payments = repo.getPayments()
-
-            val result = mutableListOf<CardSummary>()
-
-            for (acc in accounts.documents) {
-
-                val type = acc.getString("type") ?: ""
-                if (type != "credit_card") continue
-
-                val id = acc.id
-                val name = acc.getString("name") ?: ""
-                val bill = acc.getDouble("bill") ?: 0.0
-
-                var totalGiven = 0.0
-                var totalReceived = 0.0
-
-                transactions.documents.forEach {
-                    if (it.getString("accountId") == id)
-                        totalGiven += it.getDouble("amount") ?: 0.0
+                composable("dashboard") {
+                    DashboardScreen(navController)
                 }
 
-                payments.documents.forEach {
-                    if (it.getString("accountId") == id)
-                        totalReceived += it.getDouble("amount") ?: 0.0
+                composable("addTransaction") {
+                    AddTransactionScreen {
+                        navController.popBackStack()
+                    }
                 }
 
-                val pending = totalGiven - totalReceived
-                var payable = bill - pending
-                if (payable < 0) payable = 0.0
-
-                result.add(
-                    CardSummary(id, name, bill, pending, payable)
-                )
+                composable("addPayment") {
+                    AddPaymentScreen {
+                        navController.popBackStack()
+                    }
+                }
             }
-
-            _cards.value = result
         }
     }
 }

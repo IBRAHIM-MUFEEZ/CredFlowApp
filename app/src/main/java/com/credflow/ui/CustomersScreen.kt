@@ -1,5 +1,5 @@
 package com.credflow.ui
-
+import com.credflow.data.models.CardSummary
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -61,7 +61,7 @@ fun CustomersScreen(vm: MainViewModel = viewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomerCard(card: com.credflow.data.models.CardSummary) {
+fun CustomerCard(card: CardSummary) {
     Card(
         modifier = Modifier
             .fillMaxWidth()

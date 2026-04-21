@@ -2,138 +2,112 @@ package com.credflow.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.credflow.viewmodel.MainViewModel
+import com.credflow.data.models.CardSummary
 
-enum class DashboardScreen {
+enum class DashboardTab {
     HOME, ACCOUNTS, CUSTOMERS, ANALYTICS
 }
 
 @Composable
-fun DashboardScreen(vm: MainViewModel = viewModel()) {
+fun DashboardScreen(
+    navController: NavController,
+    vm: MainViewModel = viewModel()
+) {
 
-    var currentScreen by remember { mutableStateOf(DashboardScreen.HOME) }
+    var currentScreen by remember { mutableStateOf(DashboardTab.HOME) }
     val cards by vm.cards.collectAsState()
 
     Scaffold(
+
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { navController.navigate("addTransaction") }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+            }
+        },
+
         bottomBar = {
             NavigationBar {
+
                 NavigationBarItem(
-                    selected = currentScreen == DashboardScreen.HOME,
-                    onClick = { currentScreen = DashboardScreen.HOME },
-                    icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
+                    selected = currentScreen == DashboardTab.HOME,
+                    onClick = { currentScreen = DashboardTab.HOME },
+                    icon = { Icon(Icons.Default.Home, null) },
                     label = { Text("Home") }
                 )
+
                 NavigationBarItem(
-                    selected = currentScreen == DashboardScreen.ACCOUNTS,
-                    onClick = { currentScreen = DashboardScreen.ACCOUNTS },
-                    icon = { Icon(Icons.Filled.List, contentDescription = "Accounts") },
+                    selected = currentScreen == DashboardTab.ACCOUNTS,
+                    onClick = { currentScreen = DashboardTab.ACCOUNTS },
+                    icon = { Icon(Icons.Default.List, null) },
                     label = { Text("Accounts") }
                 )
+
                 NavigationBarItem(
-                    selected = currentScreen == DashboardScreen.CUSTOMERS,
-                    onClick = { currentScreen = DashboardScreen.CUSTOMERS },
-                    icon = { Icon(Icons.Filled.AccountBox, contentDescription = "Customers") },
+                    selected = currentScreen == DashboardTab.CUSTOMERS,
+                    onClick = { currentScreen = DashboardTab.CUSTOMERS },
+                    icon = { Icon(Icons.Default.AccountBox, null) },
                     label = { Text("Customers") }
                 )
+
                 NavigationBarItem(
-                    selected = currentScreen == DashboardScreen.ANALYTICS,
-                    onClick = { currentScreen = DashboardScreen.ANALYTICS },
-                    icon = { Icon(Icons.Filled.BarChart, contentDescription = "Analytics") },
+                    selected = currentScreen == DashboardTab.ANALYTICS,
+                    onClick = { currentScreen = DashboardTab.ANALYTICS },
+                    icon = { Icon(Icons.Default.BarChart, null) },
                     label = { Text("Analytics") }
                 )
             }
         }
-    ) { paddingValues ->
+
+    ) { padding ->
+
         when (currentScreen) {
-            DashboardScreen.HOME -> HomeScreen(cards, Modifier.padding(paddingValues))
-            DashboardScreen.ACCOUNTS -> AccountsScreen(vm)
-            DashboardScreen.CUSTOMERS -> CustomersScreen(vm)
-            DashboardScreen.ANALYTICS -> AnalyticsScreen(vm)
+            DashboardTab.HOME -> HomeScreen(cards, Modifier.padding(padding))
+            DashboardTab.ACCOUNTS -> AccountsScreen(vm)
+            DashboardTab.CUSTOMERS -> CustomersScreen(vm)
+            DashboardTab.ANALYTICS -> AnalyticsScreen(vm)
         }
     }
 }
 
 @Composable
 fun HomeScreen(
-    cards: List<com.credflow.data.models.CardSummary>,
+    cards: List<CardSummary>,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "💳 CredFlow Dashboard",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 20.dp)
-        )
+
+    Column(modifier = modifier.padding(16.dp)) {
+
+        Text("💳 CredFlow Dashboard", style = MaterialTheme.typography.headlineSmall)
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (cards.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                contentAlignment = androidx.compose.ui.Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            Text("No cards yet. Add transactions to begin.")
+        } else {
+            cards.forEach {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
                 ) {
-                    Text(
-                        "Welcome to CredFlow!",
-                        style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text(
-                        "Start by adding your first account or card",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(it.name)
+                        Text("Bill: ₹${it.bill}")
+                        Text("Pending: ₹${it.pending}")
+                        Text("Payable: ₹${it.payable}")
+                    }
                 }
             }
-        } else {
-            Text(
-                "Your Cards (${cards.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            cards.forEach {
-                CreditCardItem(it.name, it.bill, it.pending, it.payable)
-            }
-        }
-    }
-}
-
-@Composable
-fun CreditCardItem(
-    name: String,
-    bill: Double,
-    pending: Double,
-    payable: Double
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(8.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-
-            Text(text = name, style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text("Bill: ₹${String.format("%.2f", bill)}")
-            Text("Pending: ₹${String.format("%.2f", pending)}")
-            Text("Payable: ₹${String.format("%.2f", payable)}")
         }
     }
 }
