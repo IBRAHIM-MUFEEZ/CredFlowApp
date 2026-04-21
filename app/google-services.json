@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "109696540700",
+    "firebase_url": "https://my-awesome-project-b08aa.firebaseio.com",
+    "project_id": "my-awesome-project-b08aa",
+    "storage_bucket": "my-awesome-project-b08aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:109696540700:android:a6d6289171fa78bfd3bfd9",
+        "android_client_info": {
+          "package_name": "com.example.credflowapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "109696540700-412r4uhgitnia785d09srruqp0job3oo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUPv6trHp3bceHJFqaxKh3G_q_BqK3bAI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "109696540700-412r4uhgitnia785d09srruqp0job3oo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
