@@ -13,24 +13,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            CredFlowTheme {
+                val navController = rememberNavController()
 
-            val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "dashboard") {
 
-            NavHost(navController = navController, startDestination = "dashboard") {
-
-                composable("dashboard") {
-                    DashboardScreen(navController)
-                }
-
-                composable("addTransaction") {
-                    AddTransactionScreen {
-                        navController.popBackStack()
+                    composable("dashboard") {
+                        DashboardScreen(navController)
                     }
-                }
 
-                composable("addPayment") {
-                    AddPaymentScreen {
-                        navController.popBackStack()
+                    composable("addTransaction") {
+                        AddTransactionScreen {
+                            navController.popBackStack()
+                        }
+                    }
+
+                    composable("addPayment") {
+                        AddPaymentScreen {
+                            navController.popBackStack()
+                        }
                     }
                 }
             }

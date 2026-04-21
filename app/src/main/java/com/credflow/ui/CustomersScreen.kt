@@ -56,47 +56,50 @@ fun CustomersScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = viewMode.label,
-                style = MaterialTheme.typography.headlineMedium
-            )
-
-            TextButton(
-                onClick = {
-                    viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
-                        CustomerViewMode.RECYCLE_BIN
-                    } else {
-                        CustomerViewMode.ACTIVE
+        PageHeader(
+            title = viewMode.label,
+            subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
+                "Manage customer ledgers, dues, and transactions."
+            } else {
+                "Restore customers or remove old records forever."
+            },
+            modifier = Modifier.padding(bottom = 16.dp),
+            trailing = {
+                TextButton(
+                    onClick = {
+                        viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
+                            CustomerViewMode.RECYCLE_BIN
+                        } else {
+                            CustomerViewMode.ACTIVE
+                        }
                     }
+                ) {
+                    Text(
+                        if (viewMode == CustomerViewMode.ACTIVE) {
+                            "Recycle Bin"
+                        } else {
+                            "Customers"
+                        }
+                    )
                 }
-            ) {
-                Text(
-                    if (viewMode == CustomerViewMode.ACTIVE) {
-                        "Recycle Bin"
-                    } else {
-                        "Customers"
-                    }
-                )
             }
-        }
+        )
 
         if (visibleCustomers.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    if (viewMode == CustomerViewMode.ACTIVE) {
-                        "No customers yet. Tap + to add one."
+                EmptyState(
+                    title = if (viewMode == CustomerViewMode.ACTIVE) {
+                        "No customers yet"
                     } else {
-                        "Recycle bin is empty."
+                        "Recycle bin is empty"
+                    },
+                    subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
+                        "Tap + to add your first customer ledger."
+                    } else {
+                        "Deleted customers will wait here before permanent removal."
                     }
                 )
             }
@@ -151,16 +154,13 @@ fun CustomerCard(
         }
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        elevation = CardDefaults.cardElevation(4.dp)
+    FlowCard(
+        accentColor = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(vertical = 4.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -200,12 +200,28 @@ fun CustomerCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AmountColumn("Used", customer.totalAmount)
-                AmountColumn("Due Paid", customer.creditDueAmount)
-                AmountColumn("Balance", customer.balance)
+                MetricPill(
+                    label = "Used",
+                    value = formatMoney(customer.totalAmount),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                MetricPill(
+                    label = "Due Paid",
+                    value = formatMoney(customer.creditDueAmount),
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.weight(1f)
+                )
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            StatusBadge(
+                text = "Balance ${formatMoney(customer.balance)}",
+                color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -313,11 +329,10 @@ fun DeletedCustomerCard(
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(4.dp)
+    FlowCard(
+        accentColor = dangerColor()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column {
             Text(
                 text = customer.name,
                 style = MaterialTheme.typography.titleMedium
@@ -330,11 +345,20 @@ fun DeletedCustomerCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AmountColumn("Used", customer.totalAmount)
-                AmountColumn("Due Paid", customer.creditDueAmount)
-                AmountColumn("Balance", customer.balance)
+                MetricPill(
+                    label = "Used",
+                    value = formatMoney(customer.totalAmount),
+                    color = dangerColor(),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricPill(
+                    label = "Balance",
+                    value = formatMoney(customer.balance),
+                    color = warningColor(),
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
