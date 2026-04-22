@@ -1,7 +1,10 @@
 package com.credflow.ui
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +51,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,11 +87,13 @@ private enum class TransactionTypeFilter(val label: String) {
 fun CustomersScreen(
     selectedAccountIds: Set<String>,
     vm: MainViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {}
 ) {
     val customers by vm.customers.collectAsState()
     val deletedCustomers by vm.deletedCustomers.collectAsState()
     var viewMode by remember { mutableStateOf(CustomerViewMode.ACTIVE) }
+    var expandedCustomerId by rememberSaveable(viewMode) { mutableStateOf<String?>(null) }
 
     val visibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) customers else deletedCustomers
 
@@ -102,18 +113,23 @@ fun CustomersScreen(
                     "Restore customers or remove old records forever."
                 },
                 trailing = {
-                    TextButton(
-                        onClick = {
-                            viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
-                                CustomerViewMode.RECYCLE_BIN
-                            } else {
-                                CustomerViewMode.ACTIVE
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = {
+                                viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
+                                    CustomerViewMode.RECYCLE_BIN
+                                } else {
+                                    CustomerViewMode.ACTIVE
+                                }
                             }
+                        ) {
+                            Text(
+                                if (viewMode == CustomerViewMode.ACTIVE) "Recycle Bin" else "Customers"
+                            )
                         }
-                    ) {
-                        Text(
-                            if (viewMode == CustomerViewMode.ACTIVE) "Recycle Bin" else "Customers"
-                        )
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
                 }
             )
@@ -147,7 +163,15 @@ fun CustomersScreen(
                     CustomerCard(
                         customer = customer,
                         vm = vm,
-                        selectedAccountIds = selectedAccountIds
+                        selectedAccountIds = selectedAccountIds,
+                        isExpanded = expandedCustomerId == customer.id,
+                        onToggleExpanded = {
+                            expandedCustomerId = if (expandedCustomerId == customer.id) {
+                                null
+                            } else {
+                                customer.id
+                            }
+                        }
                     )
                 } else {
                     DeletedCustomerCard(
@@ -170,7 +194,9 @@ fun CustomersScreen(
 fun CustomerCard(
     customer: CustomerSummary,
     vm: MainViewModel,
-    selectedAccountIds: Set<String>
+    selectedAccountIds: Set<String>,
+    isExpanded: Boolean,
+    onToggleExpanded: () -> Unit
 ) {
     var showAddTransaction by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
@@ -186,104 +212,186 @@ fun CustomerCard(
 
     FlowCard(
         accentColor = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 4.dp)
+        modifier = Modifier
+            .padding(vertical = 4.dp)
+            .animateContentSize()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            AdaptiveHeaderRow(
-                leading = {
-                    Column {
-                        Text(
-                            text = customer.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${customer.transactions.size} transaction(s)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                },
-                trailing = {
-                    IconButton(
-                        onClick = {
-                            vm.deleteCustomer(
-                                customerId = customer.id,
-                                customerName = customer.name
-                            )
-                        }
-                    ) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            ResponsiveTwoPane(
-                first = { itemModifier ->
-                    MetricPill(
-                        label = "Used",
-                        value = formatMoney(customer.totalAmount),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = itemModifier
-                    )
-                },
-                second = { itemModifier ->
-                    MetricPill(
-                        label = "Customer Paid",
-                        value = formatMoney(customer.creditDueAmount),
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = itemModifier
-                    )
-                }
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            AccentValueRow(
-                label = "Balance Remaining",
-                value = formatMoney(customer.balance),
-                color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
-            )
-
-            Text(
-                text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 10.dp)
-            )
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            CustomerSectionHeader(
-                title = "Transactions",
-                actionLabel = "Add",
-                onAction = { showAddTransaction = true }
-            )
-
-            TransactionTypeDropdown(
-                selectedFilter = transactionFilter,
-                onFilterSelected = { transactionFilter = it },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp, bottom = 8.dp)
-            )
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(onClick = onToggleExpanded)
+                    .padding(4.dp)
+            ) {
+                AdaptiveHeaderRow(
+                    leading = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = Color.White.copy(alpha = 0.55f),
+                                        shape = RoundedCornerShape(24.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = initialsFor(customer.name),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Column(modifier = Modifier.padding(start = 12.dp)) {
+                                Text(
+                                    text = customer.name,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${customer.transactions.size} transaction(s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    },
+                    trailing = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "Balance",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = formatMoney(customer.balance),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (customer.balance > 0.0) {
+                                        warningColor()
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    vm.deleteCustomer(
+                                        customerId = customer.id,
+                                        customerName = customer.name
+                                    )
+                                }
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
+                            }
+                            Icon(
+                                imageVector = if (isExpanded) {
+                                    Icons.Filled.KeyboardArrowUp
+                                } else {
+                                    Icons.Filled.KeyboardArrowDown
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                )
 
-            if (filteredTransactions.isEmpty()) {
-                EmptyInlineState("No transactions for this selection.")
-            } else {
-                filteredTransactions.forEach { transaction ->
-                    TransactionRow(
-                        transaction = transaction,
-                        onEdit = { transactionToEdit = transaction },
-                        onDelete = { vm.deleteTransaction(transaction.id) },
-                        onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) }
-                    )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                ResponsiveTwoPane(
+                    first = { itemModifier ->
+                        MetricPill(
+                            label = "Used",
+                            value = formatMoney(customer.totalAmount),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = itemModifier
+                        )
+                    },
+                    second = { itemModifier ->
+                        MetricPill(
+                            label = "Customer Paid",
+                            value = formatMoney(customer.creditDueAmount),
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = itemModifier
+                        )
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                AccentValueRow(
+                    label = "Balance Remaining",
+                    value = formatMoney(customer.balance),
+                    color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+
+                Text(
+                    text = if (isExpanded) {
+                        "Tap to hide transaction details"
+                    } else {
+                        "Tap to view transaction details"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(18.dp))
+
+                CustomerSectionHeader(
+                    title = "Transactions",
+                    actionLabel = "Add",
+                    onAction = { showAddTransaction = true }
+                )
+
+                TransactionTypeDropdown(
+                    selectedFilter = transactionFilter,
+                    onFilterSelected = { transactionFilter = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 8.dp)
+                )
+
+                if (filteredTransactions.isEmpty()) {
+                    EmptyInlineState("No transactions for this selection.")
+                } else {
+                    filteredTransactions.forEach { transaction ->
+                        TransactionRow(
+                            transaction = transaction,
+                            onEdit = { transactionToEdit = transaction },
+                            onDelete = { vm.deleteTransaction(transaction.id) },
+                            onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) }
+                        )
+                    }
                 }
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                StatusBadge(
+                    text = "${customer.transactions.count { !it.isSettled }} pending / ${customer.transactions.count { it.isSettled }} settled",
+                    color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -331,6 +439,18 @@ fun CustomerCard(
         )
     }
 
+}
+
+private fun initialsFor(name: String): String {
+    val parts = name
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+
+    return parts.joinToString(separator = "") { part ->
+        part.first().uppercaseChar().toString()
+    }.ifBlank { "CF" }
 }
 
 @Composable
@@ -731,18 +851,38 @@ fun TransactionEditorDialog(
                     )
                 }
 
-                OutlinedTextField(
-                    value = amountExpression,
-                    onValueChange = {},
-                    readOnly = true,
-                    singleLine = true,
-                    label = { Text("Amount / Calculator") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    leadingIcon = { Text("₹") },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                )
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 18.dp, vertical = 20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Amount",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = if (amountExpression.isBlank()) "₹0" else "₹$amountExpression",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
                 Text(
                     text = if (calculatedAmount != null) {
@@ -752,7 +892,7 @@ fun TransactionEditorDialog(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
                 )
 
                 CalculatorPad(
@@ -844,7 +984,7 @@ private fun CalculatorPad(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             row.forEach { label ->
-                OutlinedButton(
+                Button(
                     onClick = {
                         when (label) {
                             "CLR" -> onExpressionChange("")
@@ -858,6 +998,16 @@ private fun CalculatorPad(
                         }
                     },
                     modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.48f)
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                     contentPadding = PaddingValues(vertical = 8.dp, horizontal = 2.dp)
                 ) {
                     Text(label)

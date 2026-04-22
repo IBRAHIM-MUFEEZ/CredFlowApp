@@ -1,20 +1,25 @@
 package com.credflow.data.repository
+
 import com.credflow.data.models.AccountKind
 import com.credflow.data.models.AppData
+import com.credflow.data.models.BackupRecord
 import com.credflow.data.models.CardSummary
 import com.credflow.data.models.CustomerSummary
 import com.credflow.data.models.CustomerTransaction
+import com.credflow.data.models.FirestoreBackupPayload
 import com.credflow.data.models.IndianAccountCatalog
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import java.time.Instant
 import kotlinx.coroutines.tasks.await
 
-class FirebaseRepository {
-
-    private val db = FirebaseFirestore.getInstance()
-
+class FirebaseRepository(
+    private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
+    private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
+) {
     suspend fun addCustomer(name: String) {
         val data = hashMapOf(
             "name" to name,
@@ -22,14 +27,14 @@ class FirebaseRepository {
             "isDeleted" to false
         )
 
-        db.collection("customers").add(data).await()
+        customersCollection().add(data).await()
     }
 
     suspend fun deleteCustomer(
         customerId: String,
         customerName: String
     ) {
-        db.collection("customers")
+        customersCollection()
             .document(customerId)
             .set(
                 mapOf(
@@ -43,7 +48,7 @@ class FirebaseRepository {
     }
 
     suspend fun restoreCustomer(customerId: String) {
-        db.collection("customers")
+        customersCollection()
             .document(customerId)
             .set(
                 mapOf(
@@ -59,12 +64,12 @@ class FirebaseRepository {
         customerId: String,
         customerName: String
     ) {
-        val customerRef = db.collection("customers").document(customerId)
-        val transactionSnapshot = db.collection("transactions")
+        val customerRef = customersCollection().document(customerId)
+        val transactionSnapshot = transactionsCollection()
             .whereEqualTo("customerId", customerId)
             .get()
             .await()
-        val legacyTransactionSnapshot = db.collection("transactions")
+        val legacyTransactionSnapshot = transactionsCollection()
             .whereEqualTo("customerName", customerName)
             .get()
             .await()
@@ -90,7 +95,7 @@ class FirebaseRepository {
         customerName: String,
         creditDueAmount: Double
     ) {
-        db.collection("customers")
+        customersCollection()
             .document(customerId)
             .set(
                 mapOf(
@@ -111,7 +116,7 @@ class FirebaseRepository {
         reminderEmail: String,
         reminderWhatsApp: String
     ) {
-        db.collection("accounts")
+        accountsCollection()
             .document(accountId)
             .set(
                 mapOf(
@@ -134,7 +139,7 @@ class FirebaseRepository {
         isSettled: Boolean,
         settledDate: String
     ) {
-        db.collection("transactions")
+        transactionsCollection()
             .document(transactionId)
             .set(
                 mapOf(
@@ -146,7 +151,6 @@ class FirebaseRepository {
             .await()
     }
 
-    // ✅ SAVE TRANSACTION
     suspend fun addTransaction(
         customerId: String,
         transactionName: String,
@@ -169,7 +173,7 @@ class FirebaseRepository {
             "givenDate" to transactionDate
         )
 
-        db.collection("transactions").add(data).await()
+        transactionsCollection().add(data).await()
     }
 
     suspend fun updateTransaction(
@@ -192,17 +196,16 @@ class FirebaseRepository {
             "dueDate" to FieldValue.delete()
         )
 
-        db.collection("transactions")
+        transactionsCollection()
             .document(transactionId)
             .set(data, SetOptions.merge())
             .await()
     }
 
     suspend fun deleteTransaction(transactionId: String) {
-        db.collection("transactions").document(transactionId).delete().await()
+        transactionsCollection().document(transactionId).delete().await()
     }
 
-    // ✅ SAVE PAYMENT
     suspend fun addPayment(
         accountId: String,
         accountName: String,
@@ -218,20 +221,24 @@ class FirebaseRepository {
             "date" to date
         )
 
-        db.collection("payments").add(data).await()
+        paymentsCollection().add(data).await()
     }
 
-    // ✅ REAL-TIME LISTENER
     fun listenAllData(onResult: (AppData) -> Unit) {
+        val root = userRoot()
+        if (root == null) {
+            onResult(AppData(emptyList(), emptyList(), emptyList()))
+            return
+        }
 
-        db.collection("customers").addSnapshotListener { cSnap, _ ->
+        root.collection("customers").addSnapshotListener { cSnap, _ ->
             val customers = cSnap?.documents.orEmpty()
 
-            db.collection("accounts").addSnapshotListener { accSnap, _ ->
+            root.collection("accounts").addSnapshotListener { accSnap, _ ->
                 val accounts = accSnap?.documents.orEmpty()
 
-                db.collection("transactions").addSnapshotListener { tSnap, _ ->
-                    db.collection("payments").addSnapshotListener { pSnap, _ ->
+                root.collection("transactions").addSnapshotListener { tSnap, _ ->
+                    root.collection("payments").addSnapshotListener { pSnap, _ ->
                         onResult(
                             buildAppData(
                                 customers = customers,
@@ -244,6 +251,130 @@ class FirebaseRepository {
                 }
             }
         }
+    }
+
+    suspend fun exportBackup(
+        profile: Map<String, Any?> = emptyMap(),
+        settings: Map<String, Any?> = emptyMap()
+    ): FirestoreBackupPayload {
+        val customers = customersCollection().get().await().documents.map { document ->
+            BackupRecord(
+                id = document.id,
+                fields = mapOf(
+                    "name" to document.getString("name").orEmpty(),
+                    "creditDueAmount" to (document.getDouble("creditDueAmount") ?: 0.0),
+                    "isDeleted" to (document.getBoolean("isDeleted") == true)
+                )
+            )
+        }
+        val accounts = accountsCollection().get().await().documents.map { document ->
+            BackupRecord(
+                id = document.id,
+                fields = mapOf(
+                    "name" to document.getString("name").orEmpty(),
+                    "accountType" to (
+                        document.getString("accountType")
+                            ?: document.getString("type")
+                            ?: AccountKind.CREDIT_CARD.storageValue
+                        ),
+                    "dueAmount" to (document.getDouble("dueAmount") ?: 0.0),
+                    "dueDate" to document.getString("dueDate").orEmpty(),
+                    "remindersEnabled" to (document.getBoolean("remindersEnabled") == true),
+                    "reminderEmail" to document.getString("reminderEmail").orEmpty(),
+                    "reminderWhatsApp" to document.getString("reminderWhatsApp").orEmpty()
+                )
+            )
+        }
+        val transactions = transactionsCollection().get().await().documents.map { document ->
+            BackupRecord(
+                id = document.id,
+                fields = mapOf(
+                    "customerId" to document.getString("customerId").orEmpty(),
+                    "transactionName" to (
+                        document.getString("transactionName")
+                            ?: document.getString("name")
+                            ?: ""
+                        ),
+                    "accountId" to document.getString("accountId").orEmpty(),
+                    "accountName" to document.getString("accountName").orEmpty(),
+                    "accountType" to document.getString("accountType").orEmpty(),
+                    "customerName" to document.getString("customerName").orEmpty(),
+                    "amount" to (document.getDouble("amount") ?: 0.0),
+                    "transactionDate" to (
+                        document.getString("transactionDate")
+                            ?: document.getString("givenDate")
+                            ?: ""
+                        ),
+                    "givenDate" to (
+                        document.getString("givenDate")
+                            ?: document.getString("transactionDate")
+                            ?: ""
+                        ),
+                    "isSettled" to (document.getBoolean("isSettled") == true),
+                    "settledDate" to document.getString("settledDate").orEmpty()
+                )
+            )
+        }
+        val payments = paymentsCollection().get().await().documents.map { document ->
+            BackupRecord(
+                id = document.id,
+                fields = mapOf(
+                    "accountId" to document.getString("accountId").orEmpty(),
+                    "accountName" to document.getString("accountName").orEmpty(),
+                    "accountType" to document.getString("accountType").orEmpty(),
+                    "amount" to (document.getDouble("amount") ?: 0.0),
+                    "date" to document.getString("date").orEmpty()
+                )
+            )
+        }
+
+        return FirestoreBackupPayload(
+            exportedAt = Instant.now().toString(),
+            profile = profile,
+            settings = settings,
+            customers = customers,
+            accounts = accounts,
+            transactions = transactions,
+            payments = payments
+        )
+    }
+
+    suspend fun restoreBackup(payload: FirestoreBackupPayload) {
+        val batch = db.batch()
+
+        payload.customers.forEach { record ->
+            batch.set(
+                customersCollection().document(record.id),
+                record.fields.filterValues { it != null },
+                SetOptions.merge()
+            )
+        }
+
+        payload.accounts.forEach { record ->
+            batch.set(
+                accountsCollection().document(record.id),
+                record.fields.filterValues { it != null },
+                SetOptions.merge()
+            )
+        }
+
+        payload.transactions.forEach { record ->
+            batch.set(
+                transactionsCollection().document(record.id),
+                record.fields.filterValues { it != null },
+                SetOptions.merge()
+            )
+        }
+
+        payload.payments.forEach { record ->
+            batch.set(
+                paymentsCollection().document(record.id),
+                record.fields.filterValues { it != null },
+                SetOptions.merge()
+            )
+        }
+
+        batch.commit().await()
     }
 
     private fun buildAppData(
@@ -419,13 +550,8 @@ class FirebaseRepository {
             )
         }
 
-        val customerSummaries = customerTotals.values.map { total ->
-            total.toSummary()
-        }
-
-        val deletedCustomerSummaries = deletedCustomerTotals.values.map { total ->
-            total.toSummary()
-        }
+        val customerSummaries = customerTotals.values.map { total -> total.toSummary() }
+        val deletedCustomerSummaries = deletedCustomerTotals.values.map { total -> total.toSummary() }
 
         return AppData(
             accounts = accountSummaries,
@@ -451,6 +577,22 @@ class FirebaseRepository {
             isDeleted = isDeleted
         )
     }
+
+    private fun userRoot() = auth.currentUser?.uid?.let { uid ->
+        db.collection("users").document(uid)
+    }
+
+    private fun customersCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+        .collection("customers")
+
+    private fun accountsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+        .collection("accounts")
+
+    private fun transactionsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+        .collection("transactions")
+
+    private fun paymentsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+        .collection("payments")
 
     private data class RunningAccountTotal(
         val id: String,

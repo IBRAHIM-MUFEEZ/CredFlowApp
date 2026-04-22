@@ -21,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -32,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.credflow.data.models.AccountOption
 import com.credflow.data.models.IndianAccountCatalog
+import com.credflow.data.profile.UserProfile
+import com.credflow.data.security.AppSecurityState
 import com.credflow.data.settings.AppSettingsState
 import com.credflow.data.settings.AppThemeMode
 
@@ -39,8 +42,18 @@ import com.credflow.data.settings.AppThemeMode
 @Composable
 fun SettingsScreen(
     settingsState: AppSettingsState,
+    profile: UserProfile?,
+    securityState: AppSecurityState,
+    backupStatusMessage: String,
     onThemeModeSelected: (AppThemeMode) -> Unit,
     onAccountSelectionChanged: (String, Boolean) -> Unit,
+    onLockEnabledChanged: (Boolean) -> Unit,
+    onBiometricEnabledChanged: (Boolean) -> Unit,
+    onEditProfile: () -> Unit,
+    onOpenSecuritySetup: () -> Unit,
+    onBackupToDrive: () -> Unit,
+    onRestoreFromDrive: () -> Unit,
+    onClearPasscode: () -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
     CredFlowBackground {
@@ -72,8 +85,143 @@ fun SettingsScreen(
                 item {
                     PageHeader(
                         title = "Settings",
-                        subtitle = "Choose the bank and credit card accounts you hold, then switch between light and dark mode."
+                        subtitle = "Manage profile, security, backups, and the account configuration used across the app."
                     )
+                }
+
+                item {
+                    FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
+                        Text(
+                            text = "Profile",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = profile?.displayName?.ifBlank { "Profile not set up" } ?: "Profile not set up",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = profile?.businessName?.ifBlank { "Add your business details" }
+                                ?: "Add your business details",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onEditProfile,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Edit Profile")
+                        }
+                    }
+                }
+
+                item {
+                    FlowCard(accentColor = MaterialTheme.colorScheme.secondary) {
+                        Text(
+                            text = "Security",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        SecurityToggleRow(
+                            title = "App lock",
+                            subtitle = if (securityState.hasPasscode) {
+                                "Require a passcode when the app is reopened."
+                            } else {
+                                "Create a passcode to enable app lock."
+                            },
+                            checked = securityState.lockEnabled,
+                            enabled = securityState.hasPasscode,
+                            onCheckedChange = onLockEnabledChanged
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        SecurityToggleRow(
+                            title = "Fingerprint / Face unlock",
+                            subtitle = if (securityState.hasPasscode) {
+                                "Allow biometric unlock in addition to the passcode."
+                            } else {
+                                "Biometrics become available after you create a passcode."
+                            },
+                            checked = securityState.biometricEnabled,
+                            enabled = securityState.hasPasscode,
+                            onCheckedChange = onBiometricEnabledChanged
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        ResponsiveTwoPane(
+                            first = { itemModifier ->
+                                Button(
+                                    onClick = onOpenSecuritySetup,
+                                    modifier = itemModifier
+                                ) {
+                                    Text(if (securityState.hasPasscode) "Change Passcode" else "Set Passcode")
+                                }
+                            },
+                            second = { itemModifier ->
+                                OutlinedButton(
+                                    onClick = onClearPasscode,
+                                    enabled = securityState.hasPasscode,
+                                    modifier = itemModifier
+                                ) {
+                                    Text("Clear Passcode")
+                                }
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
+                        Text(
+                            text = "Google Drive Backup",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Back up your profile, settings, and ledger data to your app-private Drive storage.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (backupStatusMessage.isNotBlank()) {
+                            Text(
+                                text = backupStatusMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        ResponsiveTwoPane(
+                            first = { itemModifier ->
+                                Button(
+                                    onClick = onBackupToDrive,
+                                    modifier = itemModifier
+                                ) {
+                                    Text("Back Up Now")
+                                }
+                            },
+                            second = { itemModifier ->
+                                OutlinedButton(
+                                    onClick = onRestoreFromDrive,
+                                    modifier = itemModifier
+                                ) {
+                                    Text("Restore Backup")
+                                }
+                            }
+                        )
+                    }
                 }
 
                 item {
@@ -148,6 +296,40 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SecurityToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
+        )
     }
 }
 

@@ -56,6 +56,33 @@ class AppSettingsRepository(context: Context) {
         )
     }
 
+    fun exportSettings(): Map<String, Any> {
+        return mapOf(
+            KEY_THEME_MODE to _settings.value.themeMode.name,
+            KEY_SELECTED_ACCOUNT_IDS to _settings.value.selectedAccountIds.toList()
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun restoreSettings(data: Map<String, Any?>) {
+        val themeMode = AppThemeMode.fromStorage(data[KEY_THEME_MODE] as? String)
+        val selectedAccountIds = when (val rawIds = data[KEY_SELECTED_ACCOUNT_IDS]) {
+            is List<*> -> rawIds.filterIsInstance<String>().toSet()
+            else -> emptySet()
+        }
+
+        persist(
+            AppSettingsState(
+                themeMode = themeMode,
+                selectedAccountIds = if (selectedAccountIds.isEmpty()) {
+                    IndianAccountCatalog.defaultSelectedAccountIds()
+                } else {
+                    IndianAccountCatalog.sanitizeSelectedAccountIds(selectedAccountIds)
+                }
+            )
+        )
+    }
+
     private fun loadSettings(): AppSettingsState {
         val storedThemeMode = AppThemeMode.fromStorage(
             preferences.getString(KEY_THEME_MODE, null)

@@ -12,8 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -26,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,7 +47,8 @@ import kotlin.math.abs
 fun AccountsScreen(
     cards: List<CardSummary>,
     vm: MainViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val dueReminderScheduler = remember(context) { DueReminderScheduler(context) }
@@ -57,7 +64,12 @@ fun AccountsScreen(
         item {
             PageHeader(
                 title = "Accounts",
-                subtitle = "Monitor banks, credit cards, dues, and usage."
+                subtitle = "Monitor banks, credit cards, dues, and usage.",
+                trailing = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
             )
         }
 
@@ -140,8 +152,9 @@ fun AccountsScreen(
 fun AccountSectionTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
     )
 }
@@ -178,18 +191,34 @@ fun AccountCard(
             },
             trailing = {
                 if (card.accountKind == AccountKind.CREDIT_CARD && onUpdateCreditDue != null) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Column(
+                        horizontalAlignment = androidx.compose.ui.Alignment.End
                     ) {
-                        if (onAdjustPaid != null) {
-                            TextButton(onClick = { showPaidEditor = true }) {
-                                Text("Adjust Paid")
+                        Text(
+                            text = formatMoney(card.payable),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (onAdjustPaid != null) {
+                                TextButton(onClick = { showPaidEditor = true }) {
+                                    Text("Adjust Paid")
+                                }
+                            }
+                            TextButton(onClick = { showDueEditor = true }) {
+                                Text("Edit Due")
                             }
                         }
-                        TextButton(onClick = { showDueEditor = true }) {
-                            Text("Edit Due")
-                        }
                     }
+                } else {
+                    Text(
+                        text = formatMoney(card.payable),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         )
@@ -328,17 +357,47 @@ fun CreditCardDueStatus(card: CardSummary) {
         remainingDue < 0.0 -> formatMoney(abs(remainingDue))
         else -> formatMoney(remainingDue)
     }
+    val progress = when {
+        card.dueAmount <= 0.0 -> 0f
+        card.pending >= card.dueAmount -> 1f
+        else -> (card.pending / card.dueAmount).toFloat().coerceIn(0f, 1f)
+    }
 
     Spacer(modifier = Modifier.height(16.dp))
-    Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.42f))
 
     Column(modifier = Modifier.padding(top = 12.dp)) {
-        Text(
-            text = "Credit card due",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
+        AdaptiveHeaderRow(
+            leading = {
+                Column {
+                    Text(
+                        text = "Credit card due",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (card.dueDate.isBlank()) "Add a due date to track this card." else "Due ${card.dueDate}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            },
+            trailing = {
+                StatusBadge(
+                    text = when {
+                        card.dueAmount <= 0.0 -> "Unset"
+                        remainingDue < 0.0 -> "Overpaid"
+                        remainingDue > 0.0 -> "Pending"
+                        else -> "Covered"
+                    },
+                    color = statusColor
+                )
+            }
         )
-        Spacer(modifier = Modifier.height(8.dp))
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         ResponsiveTwoPane(
             first = { itemModifier ->
                 MetricPill(
@@ -357,29 +416,36 @@ fun CreditCardDueStatus(card: CardSummary) {
                 )
             }
         )
+
         Spacer(modifier = Modifier.height(12.dp))
+
+        LinearProgressIndicator(
+            progress = progress,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp)),
+            color = statusColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         AccentValueRow(
             label = balanceLabel,
             value = balanceValue,
             color = statusColor
         )
+
         Text(
             text = "Customer used for this card: ${formatMoney(card.bill)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp)
         )
-        if (card.dueDate.isNotBlank()) {
-            Text(
-                text = "Due date: ${card.dueDate}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
         if (card.remindersEnabled) {
             Text(
-                text = "Daily reminders: due date through the previous 5 days",
+                text = "Daily reminders are enabled from 5 days before the due date.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 8.dp)

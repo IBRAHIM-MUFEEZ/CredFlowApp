@@ -1,8 +1,5 @@
 package com.credflow.ui
 
-import com.credflow.data.settings.AppThemeMode
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -33,17 +30,14 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,73 +45,72 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.credflow.data.settings.AppThemeMode
 
-private val SignalBlue = Color(0xFF42A5F5)
-private val SignalCyan = Color(0xFF58F1FF)
-private val NeonMint = Color(0xFF3DFFB2)
-private val WarningAmber = Color(0xFFFFB547)
-private val AlertRed = Color(0xFFFF6B78)
-private val DeepSpace = Color(0xFF050B14)
-private val DeepSpaceAlt = Color(0xFF09121E)
-private val PanelSurface = Color(0xFF0D1725)
-private val PanelRaised = Color(0xFF132235)
-private val Slate = Color(0xFF92A7BF)
-private val SoftWhite = Color(0xFFE9F3FF)
-private val CloudWhite = Color(0xFFF5F8FE)
-private val IcePanel = Color(0xFFFFFFFF)
-private val MistBlue = Color(0xFFE5EEF8)
-private val HorizonBlue = Color(0xFFD4E5FA)
-private val InkBlue = Color(0xFF11243A)
-private val SteelBlue = Color(0xFF5E7085)
-
-private val CredFlowDarkColors: ColorScheme = darkColorScheme(
-    primary = SignalCyan,
-    onPrimary = SoftWhite,
-    primaryContainer = Color(0xFF123447),
-    onPrimaryContainer = SoftWhite,
-    secondary = SignalBlue,
-    onSecondary = SoftWhite,
-    secondaryContainer = Color(0xFF132B43),
-    onSecondaryContainer = SoftWhite,
-    tertiary = NeonMint,
-    onTertiary = SoftWhite,
-    error = AlertRed,
-    onError = SoftWhite,
-    background = DeepSpace,
-    onBackground = SoftWhite,
-    surface = PanelSurface,
-    onSurface = SoftWhite,
-    surfaceVariant = PanelRaised,
-    onSurfaceVariant = Slate,
-    outline = SignalCyan.copy(alpha = 0.26f)
-)
+private val Indigo500 = Color(0xFF5B5CE6)
+private val Indigo300 = Color(0xFFA5B4FC)
+private val Emerald500 = Color(0xFF10B981)
+private val Emerald300 = Color(0xFF6EE7B7)
+private val Amber500 = Color(0xFFF59E0B)
+private val Rose500 = Color(0xFFF43F5E)
+private val Slate950 = Color(0xFF0F172A)
+private val Slate900 = Color(0xFF111827)
+private val Slate800 = Color(0xFF1F2937)
+private val Slate700 = Color(0xFF334155)
+private val Slate500 = Color(0xFF64748B)
+private val Slate400 = Color(0xFF94A3B8)
+private val Slate200 = Color(0xFFE2E8F0)
+private val Slate100 = Color(0xFFF1F5F9)
+private val Slate050 = Color(0xFFF8FAFC)
+private val White = Color(0xFFFFFFFF)
 
 private val CredFlowLightColors: ColorScheme = lightColorScheme(
-    primary = SignalBlue,
-    onPrimary = SoftWhite,
-    primaryContainer = Color(0xFFD8ECFF),
-    onPrimaryContainer = InkBlue,
-    secondary = Color(0xFF1A69C7),
-    onSecondary = SoftWhite,
-    secondaryContainer = Color(0xFFDDEBFF),
-    onSecondaryContainer = InkBlue,
-    tertiary = Color(0xFF008E66),
-    onTertiary = SoftWhite,
-    error = Color(0xFFBA1A1A),
-    onError = SoftWhite,
-    background = CloudWhite,
-    onBackground = InkBlue,
-    surface = IcePanel,
-    onSurface = InkBlue,
-    surfaceVariant = MistBlue,
-    onSurfaceVariant = SteelBlue,
-    outline = SignalBlue.copy(alpha = 0.22f)
+    primary = Indigo500,
+    onPrimary = White,
+    primaryContainer = Color(0xFFE8E9FF),
+    onPrimaryContainer = Slate950,
+    secondary = Emerald500,
+    onSecondary = White,
+    secondaryContainer = Color(0xFFDCFCE7),
+    onSecondaryContainer = Slate950,
+    tertiary = Amber500,
+    onTertiary = White,
+    error = Rose500,
+    onError = White,
+    background = Slate050,
+    onBackground = Slate950,
+    surface = White,
+    onSurface = Slate950,
+    surfaceVariant = Color(0xFFF3F5FB),
+    onSurfaceVariant = Slate500,
+    outline = Color(0xFFE4E8F3)
+)
+
+private val CredFlowDarkColors: ColorScheme = darkColorScheme(
+    primary = Indigo300,
+    onPrimary = Slate900,
+    primaryContainer = Color(0xFF2B316B),
+    onPrimaryContainer = White,
+    secondary = Emerald300,
+    onSecondary = Slate900,
+    secondaryContainer = Color(0xFF1F483B),
+    onSecondaryContainer = White,
+    tertiary = Color(0xFFFCD34D),
+    onTertiary = Slate900,
+    error = Color(0xFFFB7185),
+    onError = Slate900,
+    background = Slate900,
+    onBackground = White,
+    surface = Color(0xFF162132),
+    onSurface = White,
+    surfaceVariant = Color(0xFF233149),
+    onSurfaceVariant = Slate400,
+    outline = Color(0xFF344256)
 )
 
 private val LocalCredFlowDarkTheme = staticCompositionLocalOf { true }
-
-private val BaseTypography = Typography()
 private val AppSans = FontFamily.SansSerif
+private val BaseTypography = Typography()
 
 private fun appStyle(
     base: TextStyle,
@@ -132,18 +125,18 @@ private fun appStyle(
 }
 
 private val CredFlowTypography = Typography(
-    headlineLarge = appStyle(BaseTypography.headlineLarge, weight = FontWeight.Bold, letterSpacing = 0.1f),
-    headlineMedium = appStyle(BaseTypography.headlineMedium, weight = FontWeight.Bold, letterSpacing = 0.08f),
-    headlineSmall = appStyle(BaseTypography.headlineSmall, weight = FontWeight.Bold, letterSpacing = 0.06f),
-    titleLarge = appStyle(BaseTypography.titleLarge, weight = FontWeight.Bold, letterSpacing = 0.04f),
-    titleMedium = appStyle(BaseTypography.titleMedium, weight = FontWeight.Bold, letterSpacing = 0.03f),
-    titleSmall = appStyle(BaseTypography.titleSmall, weight = FontWeight.Bold, letterSpacing = 0.02f),
-    labelLarge = appStyle(BaseTypography.labelLarge, weight = FontWeight.Bold, letterSpacing = 0.12f),
-    labelMedium = appStyle(BaseTypography.labelMedium, weight = FontWeight.SemiBold, letterSpacing = 0.08f),
-    labelSmall = appStyle(BaseTypography.labelSmall, weight = FontWeight.Medium, letterSpacing = 0.04f),
-    bodyLarge = appStyle(BaseTypography.bodyLarge, weight = FontWeight.Light, letterSpacing = 0f),
-    bodyMedium = appStyle(BaseTypography.bodyMedium, weight = FontWeight.Light, letterSpacing = 0f),
-    bodySmall = appStyle(BaseTypography.bodySmall, weight = FontWeight.Light, letterSpacing = 0f)
+    headlineLarge = appStyle(BaseTypography.headlineLarge, FontWeight.Bold, 0.02f),
+    headlineMedium = appStyle(BaseTypography.headlineMedium, FontWeight.Bold, 0.02f),
+    headlineSmall = appStyle(BaseTypography.headlineSmall, FontWeight.SemiBold, 0.01f),
+    titleLarge = appStyle(BaseTypography.titleLarge, FontWeight.SemiBold, 0.01f),
+    titleMedium = appStyle(BaseTypography.titleMedium, FontWeight.SemiBold, 0.01f),
+    titleSmall = appStyle(BaseTypography.titleSmall, FontWeight.Medium, 0.01f),
+    bodyLarge = appStyle(BaseTypography.bodyLarge, FontWeight.Normal),
+    bodyMedium = appStyle(BaseTypography.bodyMedium, FontWeight.Normal),
+    bodySmall = appStyle(BaseTypography.bodySmall, FontWeight.Normal),
+    labelLarge = appStyle(BaseTypography.labelLarge, FontWeight.SemiBold, 0.03f),
+    labelMedium = appStyle(BaseTypography.labelMedium, FontWeight.Medium, 0.03f),
+    labelSmall = appStyle(BaseTypography.labelSmall, FontWeight.Medium, 0.04f)
 )
 
 @Composable
@@ -165,24 +158,30 @@ fun CredFlowTheme(
 @Composable
 fun CredFlowBackground(content: @Composable () -> Unit) {
     val useDarkTheme = LocalCredFlowDarkTheme.current
-    val ambientColor = if (useDarkTheme) DeepSpaceAlt else HorizonBlue
+    val backgroundBrush = if (useDarkTheme) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF121C2C),
+                Color(0xFF101826),
+                MaterialTheme.colorScheme.background
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFFFDFEFF),
+                Color(0xFFF8FAFC),
+                MaterialTheme.colorScheme.background
+            )
+        )
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.18f else 0.08f),
-                        ambientColor,
-                        MaterialTheme.colorScheme.background
-                    ),
-                    center = Offset(220f, 120f),
-                    radius = 1400f
-                )
-            )
+            .background(backgroundBrush)
     ) {
-        TechBackdrop()
+        GlassBackdrop()
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent,
@@ -192,48 +191,30 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun TechBackdrop() {
+private fun GlassBackdrop() {
     val useDarkTheme = LocalCredFlowDarkTheme.current
-    val lineColor = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.08f else 0.05f)
-    val pulseColor = MaterialTheme.colorScheme.tertiary.copy(alpha = if (useDarkTheme) 0.12f else 0.08f)
-    val orbitColor = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.1f else 0.07f)
+    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.18f else 0.12f)
+    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.12f else 0.1f)
+    val tertiaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val cellSize = 44.dp.toPx()
-        var x = 0f
-        while (x <= size.width) {
-            drawLine(
-                color = lineColor,
-                start = Offset(x, 0f),
-                end = Offset(x, size.height),
-                strokeWidth = 1.dp.toPx()
-            )
-            x += cellSize
-        }
-
-        var y = 0f
-        while (y <= size.height) {
-            drawLine(
-                color = lineColor,
-                start = Offset(0f, y),
-                end = Offset(size.width, y),
-                strokeWidth = 1.dp.toPx()
-            )
-            y += cellSize
-        }
-
         drawCircle(
-            color = pulseColor,
-            radius = size.minDimension * 0.26f,
-            center = Offset(size.width * 0.82f, size.height * 0.18f),
-            blendMode = BlendMode.Screen
+            color = primaryGlow,
+            radius = size.minDimension * 0.28f,
+            center = Offset(size.width * 0.18f, size.height * 0.1f),
+            style = Fill
         )
-
         drawCircle(
-            color = orbitColor,
-            radius = size.minDimension * 0.18f,
-            center = Offset(size.width * 0.14f, size.height * 0.84f),
-            style = Stroke(width = 2.dp.toPx())
+            color = secondaryGlow,
+            radius = size.minDimension * 0.24f,
+            center = Offset(size.width * 0.92f, size.height * 0.18f),
+            style = Fill
+        )
+        drawCircle(
+            color = tertiaryGlow,
+            radius = size.minDimension * 0.22f,
+            center = Offset(size.width * 0.76f, size.height * 0.86f),
+            style = Fill
         )
     }
 }
@@ -313,9 +294,8 @@ fun PageHeader(
         leading = {
             Column {
                 Text(
-                    text = title.uppercase(),
+                    text = title,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -324,7 +304,7 @@ fun PageHeader(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -340,43 +320,56 @@ fun FlowCard(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     content: @Composable () -> Unit
 ) {
+    val useDarkTheme = LocalCredFlowDarkTheme.current
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            containerColor = if (useDarkTheme) {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            } else {
+                White.copy(alpha = 0.64f)
+            },
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (useDarkTheme) {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)
+            } else {
+                White.copy(alpha = 0.72f)
+            }
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-                            MaterialTheme.colorScheme.surface
-                        )
+                    Brush.linearGradient(
+                        colors = listOf(
+                            accentColor.copy(alpha = if (useDarkTheme) 0.12f else 0.08f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = if (useDarkTheme) 0.96f else 0.52f)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset.Infinite
                     )
                 )
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                accentColor.copy(alpha = 0.5f),
-                                accentColor,
-                                MaterialTheme.colorScheme.secondary
-                            )
-                        )
-                    )
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 12.dp)
+                    .size(84.dp)
+                    .clip(CircleShape)
+                    .background(accentColor.copy(alpha = if (useDarkTheme) 0.08f else 0.1f))
             )
-            Column(modifier = Modifier.padding(18.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
                 content()
             }
         }
@@ -390,49 +383,62 @@ fun HeroPanel(
     subtitle: String,
     modifier: Modifier = Modifier
 ) {
-    val scale by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = tween(durationMillis = 450),
-        label = "hero-scale"
-    )
+    val useDarkTheme = LocalCredFlowDarkTheme.current
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .scale(scale)
             .clip(RoundedCornerShape(28.dp))
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                color = if (useDarkTheme) {
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)
+                } else {
+                    White.copy(alpha = 0.72f)
+                },
                 shape = RoundedCornerShape(28.dp)
             )
             .background(
                 Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.secondaryContainer,
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        MaterialTheme.colorScheme.primaryContainer
-                    )
+                    colors = if (useDarkTheme) {
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f)
+                        )
+                    } else {
+                        listOf(
+                            White.copy(alpha = 0.85f),
+                            Color(0xFFF3F6FF),
+                            White.copy(alpha = 0.9f)
+                        )
+                    }
                 )
             )
-            .padding(20.dp)
+            .padding(22.dp)
     ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(120.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.14f else 0.12f))
+        )
         Column {
             Text(
-                text = title.uppercase(),
+                text = title,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = amount,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
@@ -454,21 +460,21 @@ fun MetricPill(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(18.dp))
-            .defaultMinSize(minHeight = 68.dp)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .defaultMinSize(minHeight = 72.dp)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(11.dp)
+                .size(12.dp)
                 .clip(CircleShape)
                 .background(color)
         )
         Column(modifier = Modifier.padding(start = 10.dp)) {
             Text(
-                text = label.uppercase(),
+                text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -476,8 +482,7 @@ fun MetricPill(
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -501,7 +506,7 @@ fun StatusBadge(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
+            .border(1.dp, color.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
     )
 }
@@ -517,8 +522,8 @@ fun AccentValueRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(color.copy(alpha = 0.09f))
-            .border(1.dp, color.copy(alpha = 0.22f), RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.56f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -536,7 +541,6 @@ fun AccentValueRow(
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
             color = color,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -563,15 +567,16 @@ fun EmptyState(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f))
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
                 .padding(24.dp)
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -589,11 +594,11 @@ fun formatMoney(value: Double): String {
 
 fun accountAccent(accountKind: com.credflow.data.models.AccountKind): Color {
     return when (accountKind) {
-        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> SignalBlue
-        com.credflow.data.models.AccountKind.CREDIT_CARD -> NeonMint
+        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> Emerald500
+        com.credflow.data.models.AccountKind.CREDIT_CARD -> Indigo500
     }
 }
 
-fun warningColor(): Color = WarningAmber
+fun warningColor(): Color = Amber500
 
-fun dangerColor(): Color = AlertRed
+fun dangerColor(): Color = Rose500

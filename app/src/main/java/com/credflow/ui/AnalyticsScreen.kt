@@ -12,10 +12,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -48,7 +52,8 @@ private enum class AnalyticsMetric(
 fun AnalyticsScreen(
     cards: List<CardSummary>,
     customers: List<CustomerSummary>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {}
 ) {
     val totalUsed = cards.sumOf { it.bill }
     val totalPaid = cards.sumOf { it.pending }
@@ -84,7 +89,12 @@ fun AnalyticsScreen(
         item {
             PageHeader(
                 title = "Analytics",
-                subtitle = "Inspect accounts and customers with quick metric filters."
+                subtitle = "Inspect accounts and customers with quick metric filters.",
+                trailing = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
             )
         }
 
