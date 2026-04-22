@@ -9,6 +9,7 @@ import com.credflow.data.models.CustomerTransaction
 import com.credflow.data.models.FirestoreBackupPayload
 import com.credflow.data.models.IndianAccountCatalog
 import com.credflow.data.auth.LocalIdentityRepository
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -335,41 +336,64 @@ class FirebaseRepository(
     }
 
     suspend fun restoreBackup(payload: FirestoreBackupPayload) {
-        val batch = db.batch()
+        val pendingWrites = buildList {
+            payload.customers.forEach { record ->
+                add(
+                    PendingWrite(
+                        reference = customersCollection().document(record.id),
+                        fields = record.fields.filterValues { it != null }
+                    )
+                )
+            }
 
-        payload.customers.forEach { record ->
-            batch.set(
-                customersCollection().document(record.id),
-                record.fields.filterValues { it != null },
-                SetOptions.merge()
-            )
+            payload.accounts.forEach { record ->
+                add(
+                    PendingWrite(
+                        reference = accountsCollection().document(record.id),
+                        fields = record.fields.filterValues { it != null }
+                    )
+                )
+            }
+
+            payload.transactions.forEach { record ->
+                add(
+                    PendingWrite(
+                        reference = transactionsCollection().document(record.id),
+                        fields = record.fields.filterValues { it != null }
+                    )
+                )
+            }
+
+            payload.payments.forEach { record ->
+                add(
+                    PendingWrite(
+                        reference = paymentsCollection().document(record.id),
+                        fields = record.fields.filterValues { it != null }
+                    )
+                )
+            }
         }
 
-        payload.accounts.forEach { record ->
-            batch.set(
-                accountsCollection().document(record.id),
-                record.fields.filterValues { it != null },
-                SetOptions.merge()
-            )
+        pendingWrites.chunked(MAX_BATCH_WRITE_COUNT).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { pendingWrite ->
+                batch.set(
+                    pendingWrite.reference,
+                    pendingWrite.fields,
+                    SetOptions.merge()
+                )
+            }
+            batch.commit().await()
         }
+    }
 
-        payload.transactions.forEach { record ->
-            batch.set(
-                transactionsCollection().document(record.id),
-                record.fields.filterValues { it != null },
-                SetOptions.merge()
-            )
-        }
+    private data class PendingWrite(
+        val reference: DocumentReference,
+        val fields: Map<String, Any?>
+    )
 
-        payload.payments.forEach { record ->
-            batch.set(
-                paymentsCollection().document(record.id),
-                record.fields.filterValues { it != null },
-                SetOptions.merge()
-            )
-        }
-
-        batch.commit().await()
+    private companion object {
+        const val MAX_BATCH_WRITE_COUNT = 400
     }
 
     private fun buildAppData(

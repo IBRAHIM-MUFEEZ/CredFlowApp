@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
@@ -63,7 +62,7 @@ import com.credflow.viewmodel.MainViewModel
 import java.time.LocalTime
 
 enum class DashboardTab {
-    HOME, ACCOUNTS, CUSTOMERS, ANALYTICS
+    HOME, ACCOUNTS, CUSTOMERS
 }
 
 private data class DashboardTabItem(
@@ -75,8 +74,7 @@ private data class DashboardTabItem(
 private val DashboardTabs = listOf(
     DashboardTabItem(DashboardTab.HOME, "Home", Icons.Default.Home),
     DashboardTabItem(DashboardTab.ACCOUNTS, "Accounts", Icons.Default.CreditCard),
-    DashboardTabItem(DashboardTab.CUSTOMERS, "Customers", Icons.Default.AccountBox),
-    DashboardTabItem(DashboardTab.ANALYTICS, "Analytics", Icons.Default.BarChart)
+    DashboardTabItem(DashboardTab.CUSTOMERS, "Customers", Icons.Default.AccountBox)
 )
 
 @Composable
@@ -89,7 +87,6 @@ fun DashboardScreen(
 ) {
     var currentScreen by rememberSaveable { mutableStateOf(DashboardTab.HOME) }
     val cards by vm.cards.collectAsState()
-    val customers by vm.customers.collectAsState()
     val visibleCards = remember(cards, selectedAccountIds) {
         cards.filter { it.id in selectedAccountIds }
     }
@@ -138,13 +135,6 @@ fun DashboardScreen(
                     DashboardTab.CUSTOMERS -> CustomersScreen(
                         selectedAccountIds = selectedAccountIds,
                         vm = vm,
-                        modifier = Modifier.padding(padding),
-                        onOpenSettings = onOpenSettings
-                    )
-
-                    DashboardTab.ANALYTICS -> AnalyticsScreen(
-                        cards = visibleCards,
-                        customers = customers,
                         modifier = Modifier.padding(padding),
                         onOpenSettings = onOpenSettings
                     )

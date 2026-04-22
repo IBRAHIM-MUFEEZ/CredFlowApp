@@ -397,11 +397,27 @@ fun CustomerCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Icon(
-                        imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Due ${formatMoney(customer.balance)}",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (customer.balance > 0.0) {
+                                warningColor()
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            textAlign = TextAlign.End
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

@@ -42,6 +42,7 @@ import com.credflow.security.BiometricAuthManager
 import com.credflow.ui.AddPaymentScreen
 import com.credflow.ui.AddTransactionScreen
 import com.credflow.ui.AppLockScreen
+import com.credflow.ui.ChangePasscodeScreen
 import com.credflow.ui.CredFlowBackground
 import com.credflow.ui.CredFlowTheme
 import com.credflow.ui.DashboardScreen
@@ -51,7 +52,9 @@ import com.credflow.ui.SettingsScreen
 import com.credflow.viewmodel.MainViewModel
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : FragmentActivity() {
     private var externalDocumentFlowInProgress = false
@@ -87,6 +90,7 @@ class MainActivity : FragmentActivity() {
         val cards by mainViewModel.cards.collectAsState()
 
         var backupStatusMessage by rememberSaveable { mutableStateOf("") }
+        var backupOperationInProgress by rememberSaveable { mutableStateOf(false) }
         var lockErrorMessage by rememberSaveable { mutableStateOf("") }
         val biometricAvailable = remember { biometricAuthManager.canAuthenticate(this@MainActivity) }
         val lockedAccountIds = remember(cards) {
@@ -104,44 +108,64 @@ class MainActivity : FragmentActivity() {
             return "dafira_backup_$timestamp.json"
         }
 
-        suspend fun restoreBackupJson(backupJson: String) {
-            val payload = BackupJsonSerializer.fromJson(backupJson)
-            firebaseRepository.restoreBackup(payload)
-            val profileMap = payload.profile.filterValues { it != null }
-                .mapValues { it.value as Any }
-            profileRepository.restoreProfileMap(profileMap)
-            settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
-            securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
+        suspend fun restoreBackupJson(
+            backupJson: String,
+            keepUnlocked: Boolean
+        ) {
+            withContext(Dispatchers.IO) {
+                val payload = BackupJsonSerializer.fromJson(backupJson)
+                firebaseRepository.restoreBackup(payload)
+                val profileMap = payload.profile.filterValues { it != null }
+                    .mapValues { it.value as Any }
+                profileRepository.restoreProfileMap(profileMap)
+                settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
+                securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
+                if (keepUnlocked) {
+                    securityRepository.unlock()
+                }
+            }
         }
 
         fun exportBackupToFile(uri: Uri) {
             coroutineScope.launch {
+                backupOperationInProgress = true
+                backupStatusMessage = "Exporting backup..."
                 backupStatusMessage = runCatching {
-                    val backupPayload = firebaseRepository.exportBackup(
-                        profile = profileRepository.exportProfileMap(),
-                        settings = mapOf(
-                            "app" to settingsRepository.exportSettings(),
-                            "security" to securityRepository.exportSettings()
+                    withContext(Dispatchers.IO) {
+                        val backupPayload = firebaseRepository.exportBackup(
+                            profile = profileRepository.exportProfileMap(),
+                            settings = mapOf(
+                                "app" to settingsRepository.exportSettings(),
+                                "security" to securityRepository.exportSettings()
+                            )
                         )
-                    )
-                    val backupJson = BackupJsonSerializer.toJson(backupPayload)
-                    fileBackupRepository.writeBackup(uri, backupJson).getOrThrow()
+                        val backupJson = BackupJsonSerializer.toJson(backupPayload)
+                        fileBackupRepository.writeBackup(uri, backupJson).getOrThrow()
+                    }
                     "Backup exported to file."
                 }.getOrElse { throwable ->
                     "Backup export failed: ${throwable.localizedMessage ?: "unknown error"}"
                 }
+                backupOperationInProgress = false
             }
         }
 
         fun importBackupFromFile(uri: Uri) {
             coroutineScope.launch {
+                val keepUnlocked = securityState.isUnlocked
+                backupOperationInProgress = true
+                backupStatusMessage = "Importing backup..."
                 backupStatusMessage = runCatching {
                     val backupJson = fileBackupRepository.readBackup(uri).getOrThrow()
-                    restoreBackupJson(backupJson)
+                    restoreBackupJson(
+                        backupJson = backupJson,
+                        keepUnlocked = keepUnlocked
+                    )
                     "Backup restored from file."
                 }.getOrElse { throwable ->
                     "Backup import failed: ${throwable.localizedMessage ?: "unknown error"}"
                 }
+                backupOperationInProgress = false
             }
         }
 
@@ -230,8 +254,15 @@ class MainActivity : FragmentActivity() {
                 needsSecuritySetup -> {
                     SecuritySetupScreen(
                         biometricAvailable = biometricAvailable,
-                        onSave = { passcode, enableBiometric ->
-                            securityRepository.setPasscode(passcode)
+                        initialRecoveryQuestion = profile?.email?.takeIf { it.isNotBlank() }?.let {
+                            "What is your email ID?"
+                        }.orEmpty(),
+                        onSave = { passcode, recoveryQuestion, recoveryAnswer, enableBiometric ->
+                            securityRepository.setPasscode(
+                                passcode = passcode,
+                                recoveryQuestion = recoveryQuestion,
+                                recoveryAnswer = recoveryAnswer
+                            )
                             securityRepository.setBiometricEnabled(enableBiometric)
                             securityRepository.unlock()
                         }
@@ -240,7 +271,9 @@ class MainActivity : FragmentActivity() {
 
                 requiresUnlock -> {
                     AppLockScreen(
+                        biometricAvailable = biometricAvailable,
                         biometricEnabled = securityState.biometricEnabled && biometricAvailable,
+                        recoveryQuestion = securityState.recoveryQuestion,
                         errorMessage = lockErrorMessage,
                         onUnlockWithPasscode = { passcode ->
                             val unlocked = securityRepository.verifyPasscode(passcode)
@@ -261,6 +294,24 @@ class MainActivity : FragmentActivity() {
                                         lockErrorMessage = message
                                     }
                                 )
+                            }
+                        } else {
+                            null
+                        },
+                        onResetWithRecovery = if (securityState.hasRecoveryQuestion) {
+                            { recoveryAnswer, newPasscode, enableBiometric ->
+                                val reset = securityRepository.resetPasscodeWithRecovery(
+                                    recoveryAnswer = recoveryAnswer,
+                                    newPasscode = newPasscode
+                                )
+                                if (reset) {
+                                    securityRepository.setBiometricEnabled(enableBiometric)
+                                    securityRepository.unlock()
+                                    lockErrorMessage = ""
+                                } else {
+                                    lockErrorMessage = "Recovery answer is incorrect."
+                                }
+                                reset
                             }
                         } else {
                             null
@@ -307,15 +358,44 @@ class MainActivity : FragmentActivity() {
                         }
 
                         composable("securitySetup") {
-                            SecuritySetupScreen(
-                                biometricAvailable = biometricAvailable,
-                                onSave = { passcode, enableBiometric ->
-                                    securityRepository.setPasscode(passcode)
-                                    securityRepository.setBiometricEnabled(enableBiometric)
-                                    securityRepository.unlock()
-                                    navController.popBackStack()
-                                }
-                            )
+                            if (securityState.hasPasscode) {
+                                ChangePasscodeScreen(
+                                    biometricAvailable = biometricAvailable,
+                                    biometricEnabled = securityState.biometricEnabled,
+                                    currentRecoveryQuestion = securityState.recoveryQuestion,
+                                    onSave = { currentPasscode, newPasscode, recoveryQuestion, recoveryAnswer, enableBiometric ->
+                                        val updated = securityRepository.updatePasscode(
+                                            currentPasscode = currentPasscode,
+                                            newPasscode = newPasscode,
+                                            recoveryQuestion = recoveryQuestion,
+                                            recoveryAnswer = recoveryAnswer
+                                        )
+                                        if (updated) {
+                                            securityRepository.setBiometricEnabled(enableBiometric)
+                                            securityRepository.unlock()
+                                            navController.popBackStack()
+                                        }
+                                        updated
+                                    }
+                                )
+                            } else {
+                                SecuritySetupScreen(
+                                    biometricAvailable = biometricAvailable,
+                                    initialRecoveryQuestion = profile?.email?.takeIf { it.isNotBlank() }?.let {
+                                        "What is your email ID?"
+                                    }.orEmpty(),
+                                    onSave = { passcode, recoveryQuestion, recoveryAnswer, enableBiometric ->
+                                        securityRepository.setPasscode(
+                                            passcode = passcode,
+                                            recoveryQuestion = recoveryQuestion,
+                                            recoveryAnswer = recoveryAnswer
+                                        )
+                                        securityRepository.setBiometricEnabled(enableBiometric)
+                                        securityRepository.unlock()
+                                        navController.popBackStack()
+                                    }
+                                )
+                            }
                         }
 
                         composable("settings") {
@@ -325,6 +405,7 @@ class MainActivity : FragmentActivity() {
                                 securityState = securityState,
                                 lockedAccountIds = lockedAccountIds,
                                 backupStatusMessage = backupStatusMessage,
+                                isBackupOperationInProgress = backupOperationInProgress,
                                 onThemeModeSelected = settingsRepository::setThemeMode,
                                 onAccountSelectionChanged = settingsRepository::setAccountSelected,
                                 onLockEnabledChanged = securityRepository::setLockEnabled,
@@ -332,7 +413,7 @@ class MainActivity : FragmentActivity() {
                                 onEditProfile = { navController.navigate("profile") },
                                 onOpenSecuritySetup = { navController.navigate("securitySetup") },
                                 onBackupToDrive = {
-                                    backupStatusMessage = "Preparing backup export..."
+                                    backupStatusMessage = "Choose where to save your backup."
                                     externalDocumentFlowInProgress = true
                                     runCatching {
                                         exportBackupLauncher.launch(defaultBackupFileName())
@@ -342,22 +423,22 @@ class MainActivity : FragmentActivity() {
                                     }
                                 },
                                 onRestoreFromDrive = {
-                                    backupStatusMessage = "Preparing backup import..."
+                                    backupStatusMessage = "Select a backup file to import."
                                     externalDocumentFlowInProgress = true
                                     runCatching {
                                         importBackupLauncher.launch(
                                             arrayOf(
                                                 "application/json",
                                                 "application/octet-stream",
-                                                "text/plain"
+                                                "text/plain",
+                                                "*/*"
                                             )
                                         )
                                     }.onFailure { throwable ->
                                         externalDocumentFlowInProgress = false
                                         backupStatusMessage = "Unable to open import dialog: ${throwable.localizedMessage ?: "unknown error"}"
                                     }
-                                },
-                                onClearPasscode = { securityRepository.clearPasscode() }
+                                }
                             ) {
                                 navController.popBackStack()
                             }

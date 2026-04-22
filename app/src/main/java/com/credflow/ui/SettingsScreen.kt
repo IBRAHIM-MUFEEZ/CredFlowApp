@@ -52,6 +52,7 @@ fun SettingsScreen(
     securityState: AppSecurityState,
     lockedAccountIds: Set<String>,
     backupStatusMessage: String,
+    isBackupOperationInProgress: Boolean,
     onThemeModeSelected: (AppThemeMode) -> Unit,
     onAccountSelectionChanged: (String, Boolean) -> Unit,
     onLockEnabledChanged: (Boolean) -> Unit,
@@ -60,7 +61,6 @@ fun SettingsScreen(
     onOpenSecuritySetup: () -> Unit,
     onBackupToDrive: () -> Unit,
     onRestoreFromDrive: () -> Unit,
-    onClearPasscode: () -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
     val backupStatusColor = when {
@@ -171,24 +171,22 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        ResponsiveTwoPane(
-                            first = { itemModifier ->
-                                Button(
-                                    onClick = onOpenSecuritySetup,
-                                    modifier = itemModifier
-                                ) {
-                                    Text(if (securityState.hasPasscode) "Change Passcode" else "Set Passcode")
-                                }
+                        Button(
+                            onClick = onOpenSecuritySetup,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (securityState.hasPasscode) "Change Passcode" else "Set Passcode")
+                        }
+
+                        Text(
+                            text = if (securityState.hasRecoveryQuestion) {
+                                "Forgot passcode works only through your saved recovery question: ${securityState.recoveryQuestion}"
+                            } else {
+                                "Add a mandatory recovery question when you set or change your passcode. Forgot-passcode recovery stays unavailable until then."
                             },
-                            second = { itemModifier ->
-                                OutlinedButton(
-                                    onClick = onClearPasscode,
-                                    enabled = securityState.hasPasscode,
-                                    modifier = itemModifier
-                                ) {
-                                    Text("Clear Passcode")
-                                }
-                            }
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 10.dp)
                         )
                     }
                 }
@@ -222,17 +220,31 @@ fun SettingsScreen(
                             first = { itemModifier ->
                                 Button(
                                     onClick = onBackupToDrive,
+                                    enabled = !isBackupOperationInProgress,
                                     modifier = itemModifier
                                 ) {
-                                    Text("Export Backup")
+                                    Text(
+                                        if (isBackupOperationInProgress) {
+                                            "Please Wait"
+                                        } else {
+                                            "Export Backup"
+                                        }
+                                    )
                                 }
                             },
                             second = { itemModifier ->
                                 OutlinedButton(
                                     onClick = onRestoreFromDrive,
+                                    enabled = !isBackupOperationInProgress,
                                     modifier = itemModifier
                                 ) {
-                                    Text("Import Backup")
+                                    Text(
+                                        if (isBackupOperationInProgress) {
+                                            "Please Wait"
+                                        } else {
+                                            "Import Backup"
+                                        }
+                                    )
                                 }
                             }
                         )

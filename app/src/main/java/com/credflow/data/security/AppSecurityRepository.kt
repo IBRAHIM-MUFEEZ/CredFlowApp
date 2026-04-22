@@ -11,6 +11,8 @@ data class AppSecurityState(
     val lockEnabled: Boolean = false,
     val biometricEnabled: Boolean = false,
     val hasPasscode: Boolean = false,
+    val hasRecoveryQuestion: Boolean = false,
+    val recoveryQuestion: String = "",
     val isUnlocked: Boolean = true
 )
 
@@ -23,25 +25,67 @@ class AppSecurityRepository(context: Context) {
     private val _state = MutableStateFlow(loadState())
     val state: StateFlow<AppSecurityState> = _state.asStateFlow()
 
-    fun setPasscode(passcode: String) {
+    fun setPasscode(
+        passcode: String,
+        recoveryQuestion: String,
+        recoveryAnswer: String
+    ) {
         val normalized = passcode.trim()
-        if (normalized.length < 4) return
+        val normalizedQuestion = recoveryQuestion.trim()
+        val normalizedAnswer = normalizeRecoveryAnswer(recoveryAnswer)
+        if (
+            normalized.length < 4 ||
+            normalizedQuestion.isBlank() ||
+            normalizedAnswer.isBlank()
+        ) {
+            return
+        }
 
-        preferences.edit()
-            .putString(KEY_PASSCODE_HASH, hashPasscode(normalized))
-            .putBoolean(KEY_LOCK_ENABLED, true)
-            .apply()
-
-        _state.value = _state.value.copy(
-            hasPasscode = true,
+        persistSecurity(
+            passcode = normalized,
+            recoveryQuestion = normalizedQuestion,
+            recoveryAnswer = normalizedAnswer,
             lockEnabled = true,
+            biometricEnabled = _state.value.biometricEnabled,
             isUnlocked = true
         )
+    }
+
+    fun updatePasscode(
+        currentPasscode: String,
+        newPasscode: String,
+        recoveryQuestion: String,
+        recoveryAnswer: String
+    ): Boolean {
+        if (!matchesPasscode(currentPasscode)) return false
+
+        val normalized = newPasscode.trim()
+        val normalizedQuestion = recoveryQuestion.trim()
+        val normalizedAnswer = normalizeRecoveryAnswer(recoveryAnswer)
+        if (
+            normalized.length < 4 ||
+            normalizedQuestion.isBlank() ||
+            normalizedAnswer.isBlank()
+        ) {
+            return false
+        }
+
+        persistSecurity(
+            passcode = normalized,
+            recoveryQuestion = normalizedQuestion,
+            recoveryAnswer = normalizedAnswer,
+            lockEnabled = _state.value.lockEnabled,
+            biometricEnabled = _state.value.biometricEnabled,
+            isUnlocked = true
+        )
+        return true
     }
 
     fun clearPasscode() {
         preferences.edit()
             .remove(KEY_PASSCODE_HASH)
+            .remove(KEY_RECOVERY_QUESTION)
+            .remove(KEY_RECOVERY_ANSWER_HASH)
             .putBoolean(KEY_LOCK_ENABLED, false)
             .putBoolean(KEY_BIOMETRIC_ENABLED, false)
             .apply()
@@ -50,6 +94,8 @@ class AppSecurityRepository(context: Context) {
             lockEnabled = false,
             biometricEnabled = false,
             hasPasscode = false,
+            hasRecoveryQuestion = false,
+            recoveryQuestion = "",
             isUnlocked = true
         )
     }
@@ -78,12 +124,36 @@ class AppSecurityRepository(context: Context) {
     }
 
     fun verifyPasscode(passcode: String): Boolean {
-        val storedHash = preferences.getString(KEY_PASSCODE_HASH, null).orEmpty()
-        val matches = storedHash.isNotBlank() && storedHash == hashPasscode(passcode.trim())
+        val matches = matchesPasscode(passcode)
         if (matches) {
             unlock()
         }
         return matches
+    }
+
+    fun resetPasscodeWithRecovery(
+        recoveryAnswer: String,
+        newPasscode: String
+    ): Boolean {
+        val currentRecoveryQuestion = _state.value.recoveryQuestion
+        if (
+            !_state.value.hasRecoveryQuestion ||
+            !matchesRecoveryAnswer(recoveryAnswer) ||
+            newPasscode.trim().length < 4 ||
+            currentRecoveryQuestion.isBlank()
+        ) {
+            return false
+        }
+
+        persistSecurity(
+            passcode = newPasscode.trim(),
+            recoveryQuestion = currentRecoveryQuestion,
+            recoveryAnswer = normalizeRecoveryAnswer(recoveryAnswer),
+            lockEnabled = true,
+            biometricEnabled = _state.value.biometricEnabled,
+            isUnlocked = true
+        )
+        return true
     }
 
     fun unlock() {
@@ -121,24 +191,78 @@ class AppSecurityRepository(context: Context) {
 
     private fun loadState(): AppSecurityState {
         val hasPasscode = !preferences.getString(KEY_PASSCODE_HASH, null).isNullOrBlank()
+        val recoveryQuestion = preferences.getString(KEY_RECOVERY_QUESTION, null).orEmpty()
+        val hasRecoveryQuestion = recoveryQuestion.isNotBlank() &&
+            !preferences.getString(KEY_RECOVERY_ANSWER_HASH, null).isNullOrBlank()
         val lockEnabled = preferences.getBoolean(KEY_LOCK_ENABLED, false) && hasPasscode
         val biometricEnabled = preferences.getBoolean(KEY_BIOMETRIC_ENABLED, false) && hasPasscode
         return AppSecurityState(
             lockEnabled = lockEnabled,
             biometricEnabled = biometricEnabled,
             hasPasscode = hasPasscode,
+            hasRecoveryQuestion = hasRecoveryQuestion,
+            recoveryQuestion = recoveryQuestion,
             isUnlocked = !lockEnabled
         )
+    }
+
+    private fun persistSecurity(
+        passcode: String,
+        recoveryQuestion: String,
+        recoveryAnswer: String,
+        lockEnabled: Boolean,
+        biometricEnabled: Boolean,
+        isUnlocked: Boolean
+    ) {
+        preferences.edit()
+            .putString(KEY_PASSCODE_HASH, hashPasscode(passcode))
+            .putString(KEY_RECOVERY_QUESTION, recoveryQuestion)
+            .putString(KEY_RECOVERY_ANSWER_HASH, hashRecoveryAnswer(recoveryAnswer))
+            .putBoolean(KEY_LOCK_ENABLED, lockEnabled)
+            .putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled)
+            .apply()
+
+        _state.value = AppSecurityState(
+            lockEnabled = lockEnabled,
+            biometricEnabled = biometricEnabled,
+            hasPasscode = true,
+            hasRecoveryQuestion = true,
+            recoveryQuestion = recoveryQuestion,
+            isUnlocked = isUnlocked
+        )
+    }
+
+    private fun matchesPasscode(passcode: String): Boolean {
+        val storedHash = preferences.getString(KEY_PASSCODE_HASH, null).orEmpty()
+        return storedHash.isNotBlank() && storedHash == hashPasscode(passcode.trim())
+    }
+
+    private fun matchesRecoveryAnswer(answer: String): Boolean {
+        val storedHash = preferences.getString(KEY_RECOVERY_ANSWER_HASH, null).orEmpty()
+        return storedHash.isNotBlank() &&
+            storedHash == hashRecoveryAnswer(normalizeRecoveryAnswer(answer))
     }
 
     private fun hashPasscode(passcode: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(passcode.toByteArray())
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
+
+    private fun hashRecoveryAnswer(answer: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(answer.toByteArray())
+        return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun normalizeRecoveryAnswer(answer: String): String {
+        return answer.trim().lowercase()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "credflow_security"
         const val KEY_PASSCODE_HASH = "passcode_hash"
         const val KEY_LOCK_ENABLED = "lock_enabled"
         const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
+        const val KEY_RECOVERY_QUESTION = "recovery_question"
+        const val KEY_RECOVERY_ANSWER_HASH = "recovery_answer_hash"
     }
 }
