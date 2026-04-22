@@ -75,6 +75,7 @@ fun DashboardScreen(
 ) {
     var currentScreen by rememberSaveable { mutableStateOf(DashboardTab.HOME) }
     val cards by vm.cards.collectAsState()
+    val customers by vm.customers.collectAsState()
     val visibleCards = remember(cards, selectedAccountIds) {
         cards.filter { it.id in selectedAccountIds }
     }
@@ -142,6 +143,7 @@ fun DashboardScreen(
                     )
                     DashboardTab.ANALYTICS -> AnalyticsScreen(
                         cards = visibleCards,
+                        customers = customers,
                         modifier = Modifier.padding(padding)
                     )
                 }
