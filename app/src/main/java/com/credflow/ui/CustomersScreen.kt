@@ -217,147 +217,139 @@ fun CustomerCard(
             .animateContentSize()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable(onClick = onToggleExpanded)
-                    .padding(4.dp)
-            ) {
-                AdaptiveHeaderRow(
-                    leading = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .width(48.dp)
-                                    .height(48.dp)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                    .border(
-                                        width = 1.dp,
-                                        color = Color.White.copy(alpha = 0.55f),
-                                        shape = RoundedCornerShape(24.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = initialsFor(customer.name),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Column(modifier = Modifier.padding(start = 12.dp)) {
-                                Text(
-                                    text = customer.name,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${customer.transactions.size} transaction(s)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-                    },
-                    trailing = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "Balance",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = formatMoney(customer.balance),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (customer.balance > 0.0) {
-                                        warningColor()
-                                    } else {
-                                        MaterialTheme.colorScheme.primary
-                                    }
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    vm.deleteCustomer(
-                                        customerId = customer.id,
-                                        customerName = customer.name
+            if (isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(onClick = onToggleExpanded)
+                        .padding(4.dp)
+                ) {
+                    AdaptiveHeaderRow(
+                        leading = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(48.dp)
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                        .border(
+                                            width = 1.dp,
+                                            color = Color.White.copy(alpha = 0.55f),
+                                            shape = RoundedCornerShape(24.dp)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = initialsFor(customer.name),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
+                                Column(modifier = Modifier.padding(start = 12.dp)) {
+                                    Text(
+                                        text = customer.name,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${customer.transactions.size} transaction(s)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
                             }
-                            Icon(
-                                imageVector = if (isExpanded) {
-                                    Icons.Filled.KeyboardArrowUp
-                                } else {
-                                    Icons.Filled.KeyboardArrowDown
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        trailing = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "Balance",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = formatMoney(customer.balance),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (customer.balance > 0.0) {
+                                            warningColor()
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        }
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        vm.deleteCustomer(
+                                            customerId = customer.id,
+                                            customerName = customer.name
+                                        )
+                                    }
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
+                                }
+                                Icon(
+                                    imageVector = Icons.Filled.KeyboardArrowUp,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    ResponsiveTwoPane(
+                        first = { itemModifier ->
+                            MetricPill(
+                                label = "Used",
+                                value = formatMoney(customer.totalAmount),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = itemModifier
+                            )
+                        },
+                        second = { itemModifier ->
+                            MetricPill(
+                                label = "Customer Paid",
+                                value = formatMoney(customer.creditDueAmount),
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = itemModifier
                             )
                         }
-                    }
-                )
+                    )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                ResponsiveTwoPane(
-                    first = { itemModifier ->
-                        MetricPill(
-                            label = "Used",
-                            value = formatMoney(customer.totalAmount),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = itemModifier
-                        )
-                    },
-                    second = { itemModifier ->
-                        MetricPill(
-                            label = "Customer Paid",
-                            value = formatMoney(customer.creditDueAmount),
-                            color = MaterialTheme.colorScheme.secondary,
-                            modifier = itemModifier
-                        )
-                    }
-                )
+                    AccentValueRow(
+                        label = "Balance Remaining",
+                        value = formatMoney(customer.balance),
+                        color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                    )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
 
-                AccentValueRow(
-                    label = "Balance Remaining",
-                    value = formatMoney(customer.balance),
-                    color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
-                )
+                    Text(
+                        text = "Tap to hide transaction details",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
 
-                Text(
-                    text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp)
-                )
-
-                Text(
-                    text = if (isExpanded) {
-                        "Tap to hide transaction details"
-                    } else {
-                        "Tap to view transaction details"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-
-            if (isExpanded) {
                 Spacer(modifier = Modifier.height(18.dp))
 
                 CustomerSectionHeader(
@@ -387,11 +379,30 @@ fun CustomerCard(
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.height(8.dp))
-                StatusBadge(
-                    text = "${customer.transactions.count { !it.isSettled }} pending / ${customer.transactions.count { it.isSettled }} settled",
-                    color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(onClick = onToggleExpanded)
+                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = customer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -450,7 +461,7 @@ private fun initialsFor(name: String): String {
 
     return parts.joinToString(separator = "") { part ->
         part.first().uppercaseChar().toString()
-    }.ifBlank { "CF" }
+    }.ifBlank { "DA" }
 }
 
 @Composable

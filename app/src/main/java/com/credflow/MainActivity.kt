@@ -27,11 +27,13 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.credflow.data.backup.BackupJsonSerializer
 import com.credflow.data.backup.FileBackupRepository
+import com.credflow.data.models.CardSummary
 import com.credflow.data.profile.UserProfileRepository
 import com.credflow.data.repository.FirebaseRepository
 import com.credflow.data.security.AppSecurityRepository
@@ -46,11 +48,14 @@ import com.credflow.ui.DashboardScreen
 import com.credflow.ui.ProfileSetupScreen
 import com.credflow.ui.SecuritySetupScreen
 import com.credflow.ui.SettingsScreen
+import com.credflow.viewmodel.MainViewModel
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    private var externalDocumentFlowInProgress = false
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
@@ -71,6 +76,7 @@ class MainActivity : FragmentActivity() {
         val profileRepository = remember { UserProfileRepository() }
         val fileBackupRepository = remember { FileBackupRepository(applicationContext) }
         val firebaseRepository = remember { FirebaseRepository() }
+        val mainViewModel: MainViewModel = viewModel()
         val biometricAuthManager = remember { BiometricAuthManager() }
         val navController = rememberNavController()
         val coroutineScope = rememberCoroutineScope()
@@ -78,10 +84,14 @@ class MainActivity : FragmentActivity() {
         val settingsState by settingsRepository.settings.collectAsState()
         val securityState by securityRepository.state.collectAsState()
         val profileState by profileRepository.state.collectAsState()
+        val cards by mainViewModel.cards.collectAsState()
 
         var backupStatusMessage by rememberSaveable { mutableStateOf("") }
         var lockErrorMessage by rememberSaveable { mutableStateOf("") }
         val biometricAvailable = remember { biometricAuthManager.canAuthenticate(this@MainActivity) }
+        val lockedAccountIds = remember(cards) {
+            cards.filter(CardSummary::hasLedgerActivity).mapTo(linkedSetOf()) { it.id }
+        }
 
         fun extractNestedMap(value: Any?): Map<String, Any?> {
             return (value as? Map<*, *>)?.entries
@@ -91,75 +101,69 @@ class MainActivity : FragmentActivity() {
 
         fun defaultBackupFileName(): String {
             val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-            return "credflow_backup_$timestamp.json"
+            return "dafira_backup_$timestamp.json"
         }
 
-        fun restoreBackupJson(backupJson: String) {
-            coroutineScope.launch {
-                runCatching {
-                    val payload = BackupJsonSerializer.fromJson(backupJson)
-                    firebaseRepository.restoreBackup(payload)
-                    val profileMap = payload.profile.filterValues { it != null }
-                        .mapValues { it.value as Any }
-                    profileRepository.restoreProfileMap(profileMap)
-                    settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
-                    securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
-                }.fold(
-                    onSuccess = {
-                        backupStatusMessage = "Backup restored from file."
-                    },
-                    onFailure = { throwable ->
-                        backupStatusMessage = "Restore failed: ${throwable.localizedMessage ?: "unknown error"}"
-                    }
-                )
-            }
+        suspend fun restoreBackupJson(backupJson: String) {
+            val payload = BackupJsonSerializer.fromJson(backupJson)
+            firebaseRepository.restoreBackup(payload)
+            val profileMap = payload.profile.filterValues { it != null }
+                .mapValues { it.value as Any }
+            profileRepository.restoreProfileMap(profileMap)
+            settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
+            securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
         }
 
         fun exportBackupToFile(uri: Uri) {
             coroutineScope.launch {
-                val backupPayload = firebaseRepository.exportBackup(
-                    profile = profileRepository.exportProfileMap(),
-                    settings = mapOf(
-                        "app" to settingsRepository.exportSettings(),
-                        "security" to securityRepository.exportSettings()
+                backupStatusMessage = runCatching {
+                    val backupPayload = firebaseRepository.exportBackup(
+                        profile = profileRepository.exportProfileMap(),
+                        settings = mapOf(
+                            "app" to settingsRepository.exportSettings(),
+                            "security" to securityRepository.exportSettings()
+                        )
                     )
-                )
-                val backupJson = BackupJsonSerializer.toJson(backupPayload)
-                val result = fileBackupRepository.writeBackup(uri, backupJson)
-                backupStatusMessage = result.fold(
-                    onSuccess = { "Backup exported to file." },
-                    onFailure = { throwable ->
-                        "Backup export failed: ${throwable.localizedMessage ?: "unknown error"}"
-                    }
-                )
+                    val backupJson = BackupJsonSerializer.toJson(backupPayload)
+                    fileBackupRepository.writeBackup(uri, backupJson).getOrThrow()
+                    "Backup exported to file."
+                }.getOrElse { throwable ->
+                    "Backup export failed: ${throwable.localizedMessage ?: "unknown error"}"
+                }
             }
         }
 
         fun importBackupFromFile(uri: Uri) {
             coroutineScope.launch {
-                val result = fileBackupRepository.readBackup(uri)
-                result.fold(
-                    onSuccess = ::restoreBackupJson,
-                    onFailure = { throwable ->
-                        backupStatusMessage = "Backup import failed: ${throwable.localizedMessage ?: "unknown error"}"
-                    }
-                )
+                backupStatusMessage = runCatching {
+                    val backupJson = fileBackupRepository.readBackup(uri).getOrThrow()
+                    restoreBackupJson(backupJson)
+                    "Backup restored from file."
+                }.getOrElse { throwable ->
+                    "Backup import failed: ${throwable.localizedMessage ?: "unknown error"}"
+                }
             }
         }
 
         val exportBackupLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/json")
         ) { uri ->
+            externalDocumentFlowInProgress = false
             if (uri != null) {
                 exportBackupToFile(uri)
+            } else {
+                backupStatusMessage = "Backup export cancelled."
             }
         }
 
         val importBackupLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri ->
+            externalDocumentFlowInProgress = false
             if (uri != null) {
                 importBackupFromFile(uri)
+            } else {
+                backupStatusMessage = "Backup import cancelled."
             }
         }
 
@@ -167,12 +171,16 @@ class MainActivity : FragmentActivity() {
             profileRepository.observeCurrentUserProfile()
         }
 
-        DisposableEffect(securityState.lockEnabled, securityState.hasPasscode) {
+        DisposableEffect(
+            securityState.lockEnabled,
+            securityState.hasPasscode
+        ) {
             val observer = LifecycleEventObserver { _, event ->
                 if (
                     event == Lifecycle.Event.ON_STOP &&
                     securityState.lockEnabled &&
-                    securityState.hasPasscode
+                    securityState.hasPasscode &&
+                    !externalDocumentFlowInProgress
                 ) {
                     securityRepository.lock()
                 }
@@ -243,7 +251,7 @@ class MainActivity : FragmentActivity() {
                             {
                                 biometricAuthManager.authenticate(
                                     activity = this@MainActivity,
-                                    title = "Unlock CredFlow",
+                                    title = "Unlock Dafira",
                                     subtitle = "Verify with fingerprint, face unlock, or device credential.",
                                     onSuccess = {
                                         lockErrorMessage = ""
@@ -266,7 +274,9 @@ class MainActivity : FragmentActivity() {
                             DashboardScreen(
                                 navController = navController,
                                 selectedAccountIds = settingsState.selectedAccountIds,
-                                onOpenSettings = { navController.navigate("settings") }
+                                onOpenSettings = { navController.navigate("settings") },
+                                profileName = profile?.displayName.orEmpty(),
+                                vm = mainViewModel
                             )
                         }
 
@@ -313,6 +323,7 @@ class MainActivity : FragmentActivity() {
                                 settingsState = settingsState,
                                 profile = profile,
                                 securityState = securityState,
+                                lockedAccountIds = lockedAccountIds,
                                 backupStatusMessage = backupStatusMessage,
                                 onThemeModeSelected = settingsRepository::setThemeMode,
                                 onAccountSelectionChanged = settingsRepository::setAccountSelected,
@@ -320,8 +331,32 @@ class MainActivity : FragmentActivity() {
                                 onBiometricEnabledChanged = securityRepository::setBiometricEnabled,
                                 onEditProfile = { navController.navigate("profile") },
                                 onOpenSecuritySetup = { navController.navigate("securitySetup") },
-                                onBackupToDrive = { exportBackupLauncher.launch(defaultBackupFileName()) },
-                                onRestoreFromDrive = { importBackupLauncher.launch(arrayOf("application/json", "text/plain")) },
+                                onBackupToDrive = {
+                                    backupStatusMessage = "Preparing backup export..."
+                                    externalDocumentFlowInProgress = true
+                                    runCatching {
+                                        exportBackupLauncher.launch(defaultBackupFileName())
+                                    }.onFailure { throwable ->
+                                        externalDocumentFlowInProgress = false
+                                        backupStatusMessage = "Unable to open export dialog: ${throwable.localizedMessage ?: "unknown error"}"
+                                    }
+                                },
+                                onRestoreFromDrive = {
+                                    backupStatusMessage = "Preparing backup import..."
+                                    externalDocumentFlowInProgress = true
+                                    runCatching {
+                                        importBackupLauncher.launch(
+                                            arrayOf(
+                                                "application/json",
+                                                "application/octet-stream",
+                                                "text/plain"
+                                            )
+                                        )
+                                    }.onFailure { throwable ->
+                                        externalDocumentFlowInProgress = false
+                                        backupStatusMessage = "Unable to open import dialog: ${throwable.localizedMessage ?: "unknown error"}"
+                                    }
+                                },
                                 onClearPasscode = { securityRepository.clearPasscode() }
                             ) {
                                 navController.popBackStack()
@@ -345,4 +380,14 @@ class MainActivity : FragmentActivity() {
         }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
+}
+
+private fun CardSummary.hasLedgerActivity(): Boolean {
+    return bill > 0.0 ||
+        pending > 0.0 ||
+        dueAmount > 0.0 ||
+        dueDate.isNotBlank() ||
+        remindersEnabled ||
+        reminderEmail.isNotBlank() ||
+        reminderWhatsApp.isNotBlank()
 }

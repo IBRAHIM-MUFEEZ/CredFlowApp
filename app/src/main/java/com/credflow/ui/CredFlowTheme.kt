@@ -1,5 +1,6 @@
 package com.credflow.ui
 
+import android.app.Activity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,6 +32,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,63 +50,68 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import com.credflow.data.settings.AppThemeMode
 
-private val InkWashCharcoal = Color(0xFF4A4A4A)
-private val InkWashCharcoalDeep = Color(0xFF353535)
-private val InkWashCharcoalSoft = Color(0xFF5C5C5C)
-private val InkWashMist = Color(0xFFCBCBCB)
-private val InkWashCream = Color(0xFFFFFFE3)
-private val InkWashBlue = Color(0xFF6D8196)
-private val InkWashBlueDeep = Color(0xFF556779)
-private val InkWashBlueLight = Color(0xFF96A6B6)
-private val InkWashHighlight = Color(0xFFF4EFB9)
-private val InkWashDanger = Color(0xFFE0A5A5)
-private val InkWashCanvas = Color(0xFFF4F3ED)
-private val White = Color(0xFFFFFFFF)
+private val DafiraNight = Color(0xFF060B12)
+private val DafiraNightDeep = Color(0xFF0B121C)
+private val DafiraNightSoft = Color(0xFF121B28)
+private val DafiraNightRaised = Color(0xFF182435)
+private val DafiraOutline = Color(0xFF2B3B52)
+private val DafiraCanvas = Color(0xFFF4F7FB)
+private val DafiraWhite = Color(0xFFFFFFFF)
+private val DafiraText = Color(0xFFF5F7FA)
+private val DafiraMuted = Color(0xFF98A7BB)
+private val DafiraBlue = Color(0xFF1E7FFF)
+private val DafiraBlueDeep = Color(0xFF1453B8)
+private val DafiraBlueLight = Color(0xFF77AAFF)
+private val DafiraGreen = Color(0xFF22C55E)
+private val DafiraGreenSoft = Color(0xFF9CF0B6)
+private val DafiraRed = Color(0xFFF04452)
+private val DafiraRedSoft = Color(0xFFFF9AA4)
 
 private val CredFlowLightColors: ColorScheme = lightColorScheme(
-    primary = InkWashBlue,
-    onPrimary = InkWashCream,
-    primaryContainer = Color(0xFFDDE6EE),
-    onPrimaryContainer = InkWashCharcoal,
-    secondary = InkWashCharcoal,
-    onSecondary = InkWashCream,
-    secondaryContainer = Color(0xFFE7E4DD),
-    onSecondaryContainer = InkWashCharcoal,
-    tertiary = InkWashCream,
-    onTertiary = InkWashCharcoal,
-    error = InkWashDanger,
-    onError = InkWashCharcoal,
-    background = InkWashCanvas,
-    onBackground = InkWashCharcoal,
-    surface = White,
-    onSurface = InkWashCharcoal,
-    surfaceVariant = Color(0xFFF1EFE8),
-    onSurfaceVariant = InkWashBlueDeep,
-    outline = InkWashMist
+    primary = DafiraBlue,
+    onPrimary = DafiraWhite,
+    primaryContainer = Color(0xFFD8E7FF),
+    onPrimaryContainer = DafiraNightDeep,
+    secondary = DafiraGreen,
+    onSecondary = DafiraWhite,
+    secondaryContainer = Color(0xFFDFF8E7),
+    onSecondaryContainer = DafiraNightDeep,
+    tertiary = Color(0xFFE9F3FF),
+    onTertiary = DafiraNightDeep,
+    error = DafiraRed,
+    onError = DafiraWhite,
+    background = DafiraCanvas,
+    onBackground = DafiraNightDeep,
+    surface = DafiraWhite,
+    onSurface = DafiraNightDeep,
+    surfaceVariant = Color(0xFFEAF0F8),
+    onSurfaceVariant = Color(0xFF52647C),
+    outline = Color(0xFFB9C6D8)
 )
 
 private val CredFlowDarkColors: ColorScheme = darkColorScheme(
-    primary = InkWashBlue,
-    onPrimary = InkWashCream,
-    primaryContainer = InkWashBlueDeep,
-    onPrimaryContainer = InkWashCream,
-    secondary = InkWashCream,
-    onSecondary = InkWashCharcoal,
-    secondaryContainer = InkWashCharcoalSoft,
-    onSecondaryContainer = InkWashCream,
-    tertiary = InkWashMist,
-    onTertiary = InkWashCharcoal,
-    error = InkWashDanger,
-    onError = InkWashCharcoal,
-    background = InkWashCharcoalDeep,
-    onBackground = InkWashCream,
-    surface = InkWashCharcoal,
-    onSurface = InkWashCream,
-    surfaceVariant = InkWashCharcoalSoft,
-    onSurfaceVariant = InkWashMist,
-    outline = InkWashBlueLight
+    primary = DafiraBlue,
+    onPrimary = DafiraWhite,
+    primaryContainer = DafiraBlueDeep,
+    onPrimaryContainer = DafiraText,
+    secondary = DafiraGreen,
+    onSecondary = DafiraWhite,
+    secondaryContainer = Color(0xFF143323),
+    onSecondaryContainer = DafiraGreenSoft,
+    tertiary = DafiraBlueLight,
+    onTertiary = DafiraNightDeep,
+    error = DafiraRed,
+    onError = DafiraWhite,
+    background = DafiraNight,
+    onBackground = DafiraText,
+    surface = DafiraNightDeep,
+    onSurface = DafiraText,
+    surfaceVariant = DafiraNightSoft,
+    onSurfaceVariant = DafiraMuted,
+    outline = DafiraOutline
 )
 
 private val LocalCredFlowDarkTheme = staticCompositionLocalOf { true }
@@ -150,6 +159,20 @@ fun CredFlowTheme(
     content: @Composable () -> Unit
 ) {
     val useDarkTheme = themeMode == AppThemeMode.DARK
+    val view = LocalView.current
+
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            val statusBarColor = if (useDarkTheme) {
+                DafiraNightDeep
+            } else {
+                Color(0xFFD8E7FF)
+            }
+            window.statusBarColor = statusBarColor.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
+        }
+    }
 
     CompositionLocalProvider(LocalCredFlowDarkTheme provides useDarkTheme) {
         MaterialTheme(
@@ -167,16 +190,16 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
     val backgroundBrush = if (useDarkTheme) {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF2F3134),
-                Color(0xFF3B3F45),
+                Color(0xFF03060C),
+                Color(0xFF08111C),
                 MaterialTheme.colorScheme.background
             )
         )
     } else {
         Brush.verticalGradient(
             colors = listOf(
-                White,
-                Color(0xFFF8F6F0),
+                DafiraWhite,
+                Color(0xFFF7FAFF),
                 MaterialTheme.colorScheme.background
             )
         )
@@ -199,9 +222,9 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
 @Composable
 private fun GlassBackdrop() {
     val useDarkTheme = LocalCredFlowDarkTheme.current
-    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.16f else 0.1f)
-    val secondaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = if (useDarkTheme) 0.08f else 0.14f)
-    val tertiaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.06f else 0.08f)
+    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.14f else 0.1f)
+    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.1f else 0.12f)
+    val tertiaryGlow = MaterialTheme.colorScheme.error.copy(alpha = if (useDarkTheme) 0.05f else 0.06f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         drawCircle(
@@ -335,7 +358,7 @@ fun FlowCard(
             containerColor = if (useDarkTheme) {
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             } else {
-                White.copy(alpha = 0.78f)
+                DafiraWhite.copy(alpha = 0.82f)
             },
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
@@ -355,7 +378,7 @@ fun FlowCard(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            accentColor.copy(alpha = if (useDarkTheme) 0.13f else 0.08f),
+                            accentColor.copy(alpha = if (useDarkTheme) 0.16f else 0.1f),
                             MaterialTheme.colorScheme.surface.copy(alpha = if (useDarkTheme) 0.98f else 0.82f),
                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (useDarkTheme) 0.68f else 0.52f)
                         ),
@@ -415,7 +438,7 @@ fun HeroPanel(
                         )
                     } else {
                         listOf(
-                            White.copy(alpha = 0.92f),
+                            DafiraWhite.copy(alpha = 0.92f),
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
                             MaterialTheme.colorScheme.tertiary.copy(alpha = 0.88f)
                         )
@@ -466,8 +489,8 @@ fun MetricPill(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.54f))
+        .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.34f), RoundedCornerShape(18.dp))
             .defaultMinSize(minHeight = 72.dp)
             .padding(horizontal = 14.dp, vertical = 14.dp),
@@ -529,7 +552,7 @@ fun AccentValueRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.32f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -601,11 +624,11 @@ fun formatMoney(value: Double): String {
 
 fun accountAccent(accountKind: com.credflow.data.models.AccountKind): Color {
     return when (accountKind) {
-        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> InkWashMist
-        com.credflow.data.models.AccountKind.CREDIT_CARD -> InkWashBlue
+        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> DafiraGreen
+        com.credflow.data.models.AccountKind.CREDIT_CARD -> DafiraRed
     }
 }
 
-fun warningColor(): Color = InkWashHighlight
+fun warningColor(): Color = DafiraRed
 
-fun dangerColor(): Color = InkWashDanger
+fun dangerColor(): Color = DafiraRedSoft

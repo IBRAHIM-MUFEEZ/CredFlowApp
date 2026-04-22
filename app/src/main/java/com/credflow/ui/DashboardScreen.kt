@@ -84,6 +84,7 @@ fun DashboardScreen(
     navController: NavController,
     selectedAccountIds: Set<String>,
     onOpenSettings: () -> Unit,
+    profileName: String,
     vm: MainViewModel = viewModel()
 ) {
     var currentScreen by rememberSaveable { mutableStateOf(DashboardTab.HOME) }
@@ -122,6 +123,7 @@ fun DashboardScreen(
                 when (tab) {
                     DashboardTab.HOME -> HomeScreen(
                         cards = visibleCards,
+                        profileName = profileName,
                         modifier = Modifier.padding(padding),
                         onOpenSettings = onOpenSettings
                     )
@@ -218,6 +220,7 @@ private fun DashboardBottomBar(
 @Composable
 fun HomeScreen(
     cards: List<CardSummary>,
+    profileName: String,
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit
 ) {
@@ -239,7 +242,10 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            HomeGreetingHeader(onOpenSettings = onOpenSettings)
+            HomeGreetingHeader(
+                profileName = profileName,
+                onOpenSettings = onOpenSettings
+            )
         }
 
         item {
@@ -370,6 +376,7 @@ fun HomeScreen(
 
 @Composable
 private fun HomeGreetingHeader(
+    profileName: String,
     onOpenSettings: () -> Unit
 ) {
     val greeting = remember {
@@ -378,6 +385,15 @@ private fun HomeGreetingHeader(
             in 12..16 -> "Good Afternoon,"
             else -> "Good Evening,"
         }
+    }
+    val resolvedProfileName = profileName.trim().ifBlank { "Your Profile" }
+    val initials = remember(resolvedProfileName) {
+        resolvedProfileName
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+            .take(2)
+            .joinToString(separator = "") { it.first().uppercaseChar().toString() }
+            .ifBlank { "DA" }
     }
 
     Row(
@@ -392,7 +408,7 @@ private fun HomeGreetingHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "CredFlow",
+                text = resolvedProfileName,
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -407,7 +423,7 @@ private fun HomeGreetingHeader(
                 .border(1.dp, Color.White.copy(alpha = 0.6f), CircleShape)
         ) {
             Text(
-                text = "CF",
+                text = initials,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -479,7 +495,7 @@ private fun HomeActivityCard(card: CardSummary) {
                 text = amountText,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = if (isOutgoing) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.secondary
+                color = accentColor
             )
         }
     }

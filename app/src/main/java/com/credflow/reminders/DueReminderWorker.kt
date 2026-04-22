@@ -31,7 +31,7 @@ class DueReminderWorker(
             "$accountName due in $daysLeft day${if (daysLeft == 1) "" else "s"}"
         }
 
-        val message = "Due date $dueDate. Open CredFlow to review pending amount and follow up."
+        val message = "Due date $dueDate. Open Dafira to review pending amount and follow up."
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -44,7 +44,7 @@ class DueReminderWorker(
         )
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))

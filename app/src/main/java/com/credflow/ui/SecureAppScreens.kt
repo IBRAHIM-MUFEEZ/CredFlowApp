@@ -215,7 +215,7 @@ fun AppLockScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "CredFlow Locked",
+                text = "Dafira Locked",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )

@@ -338,7 +338,7 @@ fun CreditCardDueStatus(card: CardSummary) {
     val statusColor = when {
         card.dueAmount <= 0.0 -> MaterialTheme.colorScheme.onSurfaceVariant
         remainingDue > 0.0 -> warningColor()
-        remainingDue < 0.0 -> dangerColor()
+        remainingDue < 0.0 -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.primary
     }
     val message = when {

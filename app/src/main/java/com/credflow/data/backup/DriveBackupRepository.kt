@@ -122,7 +122,7 @@ class DriveBackupRepository {
     }
 
     companion object {
-        const val BACKUP_FILE_NAME = "credflow_backup.json"
+        const val BACKUP_FILE_NAME = "dafira_backup.json"
         const val BACKUP_MIME_TYPE = "application/json"
     }
 }

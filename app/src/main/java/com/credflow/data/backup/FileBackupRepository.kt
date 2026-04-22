@@ -14,11 +14,12 @@ class FileBackupRepository(
     ): Result<Unit> {
         return withContext(Dispatchers.IO) {
             runCatching {
-                val outputStream = context.contentResolver.openOutputStream(uri, "wt")
+                val outputStream = context.contentResolver.openOutputStream(uri, "w")
                     ?: error("Unable to open the selected backup file.")
 
                 outputStream.bufferedWriter().use { writer ->
                     writer.write(backupJson)
+                    writer.flush()
                 }
             }
         }

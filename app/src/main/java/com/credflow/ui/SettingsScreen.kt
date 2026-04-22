@@ -50,6 +50,7 @@ fun SettingsScreen(
     settingsState: AppSettingsState,
     profile: UserProfile?,
     securityState: AppSecurityState,
+    lockedAccountIds: Set<String>,
     backupStatusMessage: String,
     onThemeModeSelected: (AppThemeMode) -> Unit,
     onAccountSelectionChanged: (String, Boolean) -> Unit,
@@ -288,6 +289,14 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp)
                         )
+                        if (lockedAccountIds.isNotEmpty()) {
+                            Text(
+                                text = "Accounts with saved ledger activity stay locked until those transactions or payments are cleared.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
                     }
                 }
 
@@ -295,6 +304,7 @@ fun SettingsScreen(
                     SettingsAccountSection(
                         title = "Bank Accounts",
                         options = IndianAccountCatalog.bankAccounts,
+                        lockedAccountIds = lockedAccountIds,
                         selectedAccountIds = settingsState.selectedAccountIds,
                         onAccountSelectionChanged = onAccountSelectionChanged
                     )
@@ -304,6 +314,7 @@ fun SettingsScreen(
                     SettingsAccountSection(
                         title = "Credit Cards",
                         options = IndianAccountCatalog.creditCards,
+                        lockedAccountIds = lockedAccountIds,
                         selectedAccountIds = settingsState.selectedAccountIds,
                         onAccountSelectionChanged = onAccountSelectionChanged
                     )
@@ -408,6 +419,7 @@ private fun ThemeModeButton(
 private fun SettingsAccountSection(
     title: String,
     options: List<AccountOption>,
+    lockedAccountIds: Set<String>,
     selectedAccountIds: Set<String>,
     onAccountSelectionChanged: (String, Boolean) -> Unit
 ) {
@@ -424,7 +436,9 @@ private fun SettingsAccountSection(
             SettingsAccountRow(
                 option = option,
                 selected = option.id in selectedAccountIds,
-                allowDeselection = option.id !in selectedAccountIds || selectedAccountIds.size > 1,
+                isLocked = option.id in lockedAccountIds,
+                allowDeselection = option.id !in selectedAccountIds ||
+                    (selectedAccountIds.size > 1 && option.id !in lockedAccountIds),
                 onCheckedChange = { checked ->
                     onAccountSelectionChanged(option.id, checked)
                 }
@@ -441,6 +455,7 @@ private fun SettingsAccountSection(
 private fun SettingsAccountRow(
     option: AccountOption,
     selected: Boolean,
+    isLocked: Boolean,
     allowDeselection: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
@@ -484,6 +499,14 @@ private fun SettingsAccountRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (selected && isLocked) {
+                Text(
+                    text = "Clear its ledger activity before unchecking this account.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }
