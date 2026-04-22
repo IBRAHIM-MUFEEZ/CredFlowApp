@@ -20,7 +20,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,12 +39,12 @@ import kotlin.math.abs
 
 @Composable
 fun AccountsScreen(
+    cards: List<CardSummary>,
     vm: MainViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val dueReminderScheduler = remember(context) { DueReminderScheduler(context) }
-    val cards by vm.cards.collectAsState()
     val creditCards = cards.filter { it.accountKind == AccountKind.CREDIT_CARD }
     val bankAccounts = cards.filter { it.accountKind == AccountKind.BANK_ACCOUNT }
 

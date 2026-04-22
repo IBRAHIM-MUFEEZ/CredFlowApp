@@ -15,24 +15,19 @@ import androidx.compose.foundation.border
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.data.models.CardSummary
-import com.credflow.viewmodel.MainViewModel
 
 @Composable
 fun AnalyticsScreen(
-    vm: MainViewModel = viewModel(),
+    cards: List<CardSummary>,
     modifier: Modifier = Modifier
 ) {
-    val cards by vm.cards.collectAsState()
     val totalUsed = cards.sumOf { it.bill }
     val totalPaid = cards.sumOf { it.pending }
     val totalBalance = cards.sumOf { it.payable }

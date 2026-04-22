@@ -20,26 +20,45 @@ import java.time.LocalDate
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddPaymentScreen(
+    selectedAccountIds: Set<String>,
     onNavigateBack: () -> Unit = {}
 ) {
     val vm: MainViewModel = viewModel()
+    val availableKinds = remember(selectedAccountIds) {
+        IndianAccountCatalog.availableKinds(selectedAccountIds)
+    }
+    val defaultKind = remember(availableKinds) {
+        when {
+            availableKinds.contains(AccountKind.CREDIT_CARD) -> AccountKind.CREDIT_CARD
+            availableKinds.isNotEmpty() -> availableKinds.first()
+            else -> AccountKind.CREDIT_CARD
+        }
+    }
 
-    var selectedKind by remember { mutableStateOf(AccountKind.CREDIT_CARD) }
+    var selectedKind by remember(selectedAccountIds) { mutableStateOf(defaultKind) }
     var selectedAccountId by remember {
-        mutableStateOf(IndianAccountCatalog.creditCards.first().id)
+        mutableStateOf("")
     }
     var amount by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
     val today = LocalDate.now().toString()
-    val accountOptions = remember(selectedKind) {
-        IndianAccountCatalog.optionsFor(selectedKind)
+    val accountOptions = remember(selectedKind, selectedAccountIds) {
+        IndianAccountCatalog.optionsFor(selectedKind, selectedAccountIds)
     }
     val selectedAccount = accountOptions.firstOrNull { it.id == selectedAccountId }
-        ?: accountOptions.first()
+        ?: accountOptions.firstOrNull()
 
-    LaunchedEffect(selectedKind) {
-        selectedAccountId = IndianAccountCatalog.optionsFor(selectedKind).first().id
+    LaunchedEffect(availableKinds) {
+        if (selectedKind !in availableKinds && availableKinds.isNotEmpty()) {
+            selectedKind = defaultKind
+        }
+    }
+
+    LaunchedEffect(selectedKind, accountOptions) {
+        if (accountOptions.isNotEmpty() && selectedAccountId !in accountOptions.map { it.id }) {
+            selectedAccountId = accountOptions.first().id
+        }
     }
 
     CredFlowBackground {
@@ -76,77 +95,86 @@ fun AddPaymentScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 FlowCard(accentColor = MaterialTheme.colorScheme.secondary) {
-                    AccountKindDropdown(
-                        selectedKind = selectedKind,
-                        onKindSelected = { selectedKind = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    )
+                    if (availableKinds.isEmpty() || selectedAccount == null) {
+                        Text(
+                            text = "No accounts are enabled in Settings. Add at least one bank or credit card there to record payments.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        AccountKindDropdown(
+                            options = availableKinds,
+                            selectedKind = selectedKind,
+                            onKindSelected = { selectedKind = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        )
 
-                    AccountOptionDropdown(
-                        label = if (selectedKind == AccountKind.BANK_ACCOUNT) {
-                            "Bank Account"
-                        } else {
-                            "Credit Card"
-                        },
-                        selectedOption = selectedAccount,
-                        options = accountOptions,
-                        onOptionSelected = { selectedAccountId = it.id },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    )
+                        AccountOptionDropdown(
+                            label = if (selectedKind == AccountKind.BANK_ACCOUNT) {
+                                "Bank Account"
+                            } else {
+                                "Credit Card"
+                            },
+                            selectedOption = selectedAccount,
+                            options = accountOptions,
+                            onOptionSelected = { selectedAccountId = it.id },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        )
 
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { amount = it },
-                        label = { Text("Payment Amount") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        leadingIcon = { Text("₹") }
-                    )
+                        OutlinedTextField(
+                            value = amount,
+                            onValueChange = { amount = it },
+                            label = { Text("Payment Amount") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            leadingIcon = { Text("₹") }
+                        )
 
-                    OutlinedTextField(
-                        value = today,
-                        onValueChange = {},
-                        label = { Text("Payment Date") },
-                        singleLine = true,
-                        readOnly = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 20.dp)
-                    )
+                        OutlinedTextField(
+                            value = today,
+                            onValueChange = {},
+                            label = { Text("Payment Date") },
+                            singleLine = true,
+                            readOnly = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 20.dp)
+                        )
 
-                    Button(
-                        onClick = {
-                            isLoading = true
+                        Button(
+                            onClick = {
+                                isLoading = true
 
-                            vm.addPayment(
-                                accountId = selectedAccount.id,
-                                accountName = selectedAccount.name,
-                                accountKind = selectedKind,
-                                amount = amount
-                            )
+                                vm.addPayment(
+                                    accountId = selectedAccount.id,
+                                    accountName = selectedAccount.name,
+                                    accountKind = selectedKind,
+                                    amount = amount
+                                )
 
-                            isLoading = false
-                            onNavigateBack()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        enabled = amount.toDoubleOrNull() != null
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text("Save Payment")
+                                isLoading = false
+                                onNavigateBack()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            enabled = amount.toDoubleOrNull() != null
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text("Save Payment")
+                            }
                         }
                     }
                 }

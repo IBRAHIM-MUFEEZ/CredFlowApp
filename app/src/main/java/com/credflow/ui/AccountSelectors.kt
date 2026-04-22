@@ -19,6 +19,7 @@ import com.credflow.data.models.AccountOption
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountKindDropdown(
+    options: List<AccountKind> = AccountKind.values().toList(),
     selectedKind: AccountKind,
     onKindSelected: (AccountKind) -> Unit,
     modifier: Modifier = Modifier
@@ -46,7 +47,7 @@ fun AccountKindDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            AccountKind.values().forEach { kind ->
+            options.forEach { kind ->
                 DropdownMenuItem(
                     text = { Text(kind.label) },
                     onClick = {

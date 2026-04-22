@@ -29,26 +29,78 @@ object IndianAccountCatalog {
         AccountOption("bank_sbi", "State Bank of India (SBI)", AccountKind.BANK_ACCOUNT),
         AccountOption("bank_hdfc", "HDFC Bank", AccountKind.BANK_ACCOUNT),
         AccountOption("bank_icici", "ICICI Bank", AccountKind.BANK_ACCOUNT),
-        AccountOption("bank_axis", "Axis Bank", AccountKind.BANK_ACCOUNT)
+        AccountOption("bank_axis", "Axis Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_kotak", "Kotak Mahindra Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_pnb", "Punjab National Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_bob", "Bank of Baroda", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_union", "Union Bank of India", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_canara", "Canara Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_idfc_first", "IDFC FIRST Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_indusind", "IndusInd Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_au", "AU Small Finance Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_yes", "YES BANK", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_idbi", "IDBI Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_federal", "Federal Bank", AccountKind.BANK_ACCOUNT),
+        AccountOption("bank_rbl", "RBL Bank", AccountKind.BANK_ACCOUNT)
     )
 
     val creditCards = listOf(
-        AccountOption("card_sbi", "SBI CARDS", AccountKind.CREDIT_CARD),
-        AccountOption("card_hdfc", "HDFC CREDIT CARD", AccountKind.CREDIT_CARD),
-        AccountOption("card_jupiter", "JUPITER CREDIT CARD", AccountKind.CREDIT_CARD)
+        AccountOption("card_sbi", "SBI Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_hdfc", "HDFC Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_icici", "ICICI Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_axis", "Axis Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_kotak", "Kotak Mahindra Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_indusind", "IndusInd Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_idfc_first", "IDFC FIRST Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_amex", "American Express India", AccountKind.CREDIT_CARD),
+        AccountOption("card_standard_chartered", "Standard Chartered Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_hsbc", "HSBC Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_au", "AU Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_yes", "YES BANK Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_rbl", "RBL Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_onecard", "OneCard", AccountKind.CREDIT_CARD),
+        AccountOption("card_amazon_icici", "Amazon Pay ICICI Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_flipkart_axis", "Flipkart Axis Bank Credit Card", AccountKind.CREDIT_CARD),
+        AccountOption("card_jupiter", "Jupiter Credit Card", AccountKind.CREDIT_CARD)
     )
 
     val all = bankAccounts + creditCards
 
-    fun optionsFor(accountKind: AccountKind): List<AccountOption> {
-        return when (accountKind) {
+    fun optionsFor(
+        accountKind: AccountKind,
+        selectedAccountIds: Set<String>? = null
+    ): List<AccountOption> {
+        val baseOptions = when (accountKind) {
             AccountKind.BANK_ACCOUNT -> bankAccounts
             AccountKind.CREDIT_CARD -> creditCards
+        }
+        return if (selectedAccountIds == null) {
+            baseOptions
+        } else {
+            baseOptions.filter { it.id in selectedAccountIds }
         }
     }
 
     fun optionById(id: String): AccountOption? {
         return all.firstOrNull { it.id == id }
+    }
+
+    fun availableKinds(selectedAccountIds: Set<String>): List<AccountKind> {
+        return AccountKind.values().filter { optionsFor(it, selectedAccountIds).isNotEmpty() }
+    }
+
+    fun defaultSelectedAccountIds(): Set<String> {
+        return all.map { it.id }.toSet()
+    }
+
+    fun sanitizeSelectedAccountIds(selectedAccountIds: Set<String>): Set<String> {
+        val knownIds = all.map { it.id }.toSet()
+        val filteredIds = selectedAccountIds.filterTo(mutableSetOf()) { it in knownIds }
+        return if (filteredIds.isEmpty()) {
+            defaultSelectedAccountIds()
+        } else {
+            filteredIds
+        }
     }
 }
 

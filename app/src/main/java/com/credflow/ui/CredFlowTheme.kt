@@ -1,5 +1,6 @@
 package com.credflow.ui
 
+import com.credflow.data.settings.AppThemeMode
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -29,8 +30,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,8 +63,14 @@ private val PanelSurface = Color(0xFF0D1725)
 private val PanelRaised = Color(0xFF132235)
 private val Slate = Color(0xFF92A7BF)
 private val SoftWhite = Color(0xFFE9F3FF)
+private val CloudWhite = Color(0xFFF5F8FE)
+private val IcePanel = Color(0xFFFFFFFF)
+private val MistBlue = Color(0xFFE5EEF8)
+private val HorizonBlue = Color(0xFFD4E5FA)
+private val InkBlue = Color(0xFF11243A)
+private val SteelBlue = Color(0xFF5E7085)
 
-private val CredFlowColors: ColorScheme = darkColorScheme(
+private val CredFlowDarkColors: ColorScheme = darkColorScheme(
     primary = SignalCyan,
     onPrimary = DeepSpace,
     primaryContainer = Color(0xFF123447),
@@ -81,6 +91,30 @@ private val CredFlowColors: ColorScheme = darkColorScheme(
     onSurfaceVariant = Slate,
     outline = SignalCyan.copy(alpha = 0.26f)
 )
+
+private val CredFlowLightColors: ColorScheme = lightColorScheme(
+    primary = SignalBlue,
+    onPrimary = SoftWhite,
+    primaryContainer = Color(0xFFD8ECFF),
+    onPrimaryContainer = InkBlue,
+    secondary = Color(0xFF1A69C7),
+    onSecondary = SoftWhite,
+    secondaryContainer = Color(0xFFDDEBFF),
+    onSecondaryContainer = InkBlue,
+    tertiary = Color(0xFF008E66),
+    onTertiary = SoftWhite,
+    error = Color(0xFFBA1A1A),
+    onError = SoftWhite,
+    background = CloudWhite,
+    onBackground = InkBlue,
+    surface = IcePanel,
+    onSurface = InkBlue,
+    surfaceVariant = MistBlue,
+    onSurfaceVariant = SteelBlue,
+    outline = SignalBlue.copy(alpha = 0.22f)
+)
+
+private val LocalCredFlowDarkTheme = staticCompositionLocalOf { true }
 
 private val BaseTypography = Typography()
 private val AppSans = FontFamily.SansSerif
@@ -113,24 +147,34 @@ private val CredFlowTypography = Typography(
 )
 
 @Composable
-fun CredFlowTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = CredFlowColors,
-        typography = CredFlowTypography,
-        content = content
-    )
+fun CredFlowTheme(
+    themeMode: AppThemeMode = AppThemeMode.DARK,
+    content: @Composable () -> Unit
+) {
+    val useDarkTheme = themeMode == AppThemeMode.DARK
+
+    CompositionLocalProvider(LocalCredFlowDarkTheme provides useDarkTheme) {
+        MaterialTheme(
+            colorScheme = if (useDarkTheme) CredFlowDarkColors else CredFlowLightColors,
+            typography = CredFlowTypography,
+            content = content
+        )
+    }
 }
 
 @Composable
 fun CredFlowBackground(content: @Composable () -> Unit) {
+    val useDarkTheme = LocalCredFlowDarkTheme.current
+    val ambientColor = if (useDarkTheme) DeepSpaceAlt else HorizonBlue
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                        DeepSpaceAlt,
+                        MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.18f else 0.08f),
+                        ambientColor,
                         MaterialTheme.colorScheme.background
                     ),
                     center = Offset(220f, 120f),
@@ -149,9 +193,10 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
 
 @Composable
 private fun TechBackdrop() {
-    val lineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-    val pulseColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
-    val orbitColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
+    val useDarkTheme = LocalCredFlowDarkTheme.current
+    val lineColor = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.08f else 0.05f)
+    val pulseColor = MaterialTheme.colorScheme.tertiary.copy(alpha = if (useDarkTheme) 0.12f else 0.08f)
+    val orbitColor = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.1f else 0.07f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val cellSize = 44.dp.toPx()

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.data.models.AccountKind
+import com.credflow.data.models.AccountOption
 import com.credflow.data.models.CustomerSummary
 import com.credflow.data.models.CustomerTransaction
 import com.credflow.data.models.IndianAccountCatalog
@@ -75,6 +76,7 @@ private enum class TransactionTypeFilter(val label: String) {
 
 @Composable
 fun CustomersScreen(
+    selectedAccountIds: Set<String>,
     vm: MainViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
@@ -142,7 +144,11 @@ fun CustomersScreen(
         } else {
             items(visibleCustomers, key = { it.id }) { customer ->
                 if (viewMode == CustomerViewMode.ACTIVE) {
-                    CustomerCard(customer = customer, vm = vm)
+                    CustomerCard(
+                        customer = customer,
+                        vm = vm,
+                        selectedAccountIds = selectedAccountIds
+                    )
                 } else {
                     DeletedCustomerCard(
                         customer = customer,
@@ -163,7 +169,8 @@ fun CustomersScreen(
 @Composable
 fun CustomerCard(
     customer: CustomerSummary,
-    vm: MainViewModel
+    vm: MainViewModel,
+    selectedAccountIds: Set<String>
 ) {
     var showAddTransaction by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
@@ -284,6 +291,7 @@ fun CustomerCard(
     if (showAddTransaction) {
         TransactionEditorDialog(
             customer = customer,
+            selectedAccountIds = selectedAccountIds,
             transaction = null,
             onDismiss = { showAddTransaction = false },
             onSave = { transactionName, accountId, accountName, accountKind, amount, transactionDate ->
@@ -305,6 +313,7 @@ fun CustomerCard(
     transactionToEdit?.let { transaction ->
         TransactionEditorDialog(
             customer = customer,
+            selectedAccountIds = selectedAccountIds,
             transaction = transaction,
             onDismiss = { transactionToEdit = null },
             onSave = { transactionName, accountId, accountName, accountKind, amount, transactionDate ->
@@ -584,6 +593,7 @@ fun DueAmountDialog(
 @Composable
 fun TransactionEditorDialog(
     customer: CustomerSummary,
+    selectedAccountIds: Set<String>,
     transaction: CustomerTransaction?,
     onDismiss: () -> Unit,
     onSave: (
@@ -595,16 +605,24 @@ fun TransactionEditorDialog(
         transactionDate: String
     ) -> Unit
 ) {
+    val availableKinds = remember(selectedAccountIds, transaction?.accountKind) {
+        selectedAccountKinds(selectedAccountIds, transaction?.accountKind)
+    }
+    val defaultKind = remember(availableKinds) {
+        when {
+            availableKinds.contains(AccountKind.CREDIT_CARD) -> AccountKind.CREDIT_CARD
+            availableKinds.isNotEmpty() -> availableKinds.first()
+            else -> AccountKind.CREDIT_CARD
+        }
+    }
     var transactionName by remember(transaction?.id) {
         mutableStateOf(transaction?.name.orEmpty())
     }
-    var selectedKind by remember(transaction?.id) {
-        mutableStateOf(transaction?.accountKind ?: AccountKind.CREDIT_CARD)
+    var selectedKind by remember(transaction?.id, availableKinds) {
+        mutableStateOf(transaction?.accountKind ?: defaultKind)
     }
     var selectedAccountId by remember(transaction?.id) {
-        mutableStateOf(
-            transaction?.accountId ?: IndianAccountCatalog.optionsFor(selectedKind).first().id
-        )
+        mutableStateOf(transaction?.accountId.orEmpty())
     }
     var amountExpression by remember(transaction?.id) {
         mutableStateOf(transaction?.amount?.takeIf { it > 0.0 }?.toString().orEmpty())
@@ -619,16 +637,25 @@ fun TransactionEditorDialog(
     val calculatedAmount = remember(amountExpression) {
         evaluateAmountExpression(amountExpression)
     }
-    val accountOptions = remember(selectedKind) {
-        IndianAccountCatalog.optionsFor(selectedKind)
+    val accountOptions = remember(selectedKind, selectedAccountIds, transaction?.accountId) {
+        selectedAccountOptions(
+            accountKind = selectedKind,
+            selectedAccountIds = selectedAccountIds,
+            pinnedAccountId = transaction?.accountId
+        )
     }
     val selectedAccount = accountOptions.firstOrNull { it.id == selectedAccountId }
-        ?: accountOptions.first()
+        ?: accountOptions.firstOrNull()
 
-    LaunchedEffect(selectedKind) {
-        val options = IndianAccountCatalog.optionsFor(selectedKind)
-        if (selectedAccountId !in options.map { it.id }) {
-            selectedAccountId = options.first().id
+    LaunchedEffect(availableKinds) {
+        if (selectedKind !in availableKinds && availableKinds.isNotEmpty()) {
+            selectedKind = defaultKind
+        }
+    }
+
+    LaunchedEffect(selectedKind, accountOptions) {
+        if (accountOptions.isNotEmpty() && selectedAccountId !in accountOptions.map { it.id }) {
+            selectedAccountId = accountOptions.first().id
         }
     }
 
@@ -676,23 +703,33 @@ fun TransactionEditorDialog(
                         .padding(bottom = 12.dp)
                 )
 
-                AccountKindDropdown(
-                    selectedKind = selectedKind,
-                    onKindSelected = { selectedKind = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                )
+                if (availableKinds.isEmpty() || selectedAccount == null) {
+                    Text(
+                        text = "No accounts are enabled in Settings. Select at least one bank or credit card there to add transactions.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                } else {
+                    AccountKindDropdown(
+                        options = availableKinds,
+                        selectedKind = selectedKind,
+                        onKindSelected = { selectedKind = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    )
 
-                AccountOptionDropdown(
-                    label = if (selectedKind == AccountKind.BANK_ACCOUNT) "Bank Account" else "Credit Card",
-                    selectedOption = selectedAccount,
-                    options = accountOptions,
-                    onOptionSelected = { selectedAccountId = it.id },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                )
+                    AccountOptionDropdown(
+                        label = if (selectedKind == AccountKind.BANK_ACCOUNT) "Bank Account" else "Credit Card",
+                        selectedOption = selectedAccount,
+                        options = accountOptions,
+                        onOptionSelected = { selectedAccountId = it.id },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    )
+                }
 
                 OutlinedTextField(
                     value = amountExpression,
@@ -729,10 +766,11 @@ fun TransactionEditorDialog(
             TextButton(
                 onClick = {
                     val amount = calculatedAmount ?: return@TextButton
+                    val activeAccount = selectedAccount ?: return@TextButton
                     onSave(
                         transactionName,
-                        selectedAccount.id,
-                        selectedAccount.name,
+                        activeAccount.id,
+                        activeAccount.name,
                         selectedKind,
                         amount.toString(),
                         transactionDate
@@ -740,6 +778,7 @@ fun TransactionEditorDialog(
                 },
                 enabled = transactionName.isNotBlank() &&
                     calculatedAmount != null &&
+                    selectedAccount != null &&
                     transactionDate.isNotBlank()
             ) {
                 Text("Save")
@@ -751,6 +790,36 @@ fun TransactionEditorDialog(
             }
         }
     )
+}
+
+private fun selectedAccountKinds(
+    selectedAccountIds: Set<String>,
+    pinnedKind: AccountKind?
+): List<AccountKind> {
+    val selectedKinds = IndianAccountCatalog.availableKinds(selectedAccountIds).toMutableList()
+    if (pinnedKind != null && pinnedKind !in selectedKinds) {
+        selectedKinds.add(pinnedKind)
+    }
+    return AccountKind.values().filter { it in selectedKinds }
+}
+
+private fun selectedAccountOptions(
+    accountKind: AccountKind,
+    selectedAccountIds: Set<String>,
+    pinnedAccountId: String?
+): List<AccountOption> {
+    val options = IndianAccountCatalog.optionsFor(accountKind, selectedAccountIds).toMutableList()
+    val pinnedOption = pinnedAccountId?.let(IndianAccountCatalog::optionById)
+
+    if (
+        pinnedOption != null &&
+        pinnedOption.accountKind == accountKind &&
+        options.none { it.id == pinnedOption.id }
+    ) {
+        options.add(pinnedOption)
+    }
+
+    return options
 }
 
 @Composable
