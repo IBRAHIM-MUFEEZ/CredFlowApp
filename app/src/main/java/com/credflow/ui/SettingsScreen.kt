@@ -1,5 +1,9 @@
 package com.credflow.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -56,6 +62,14 @@ fun SettingsScreen(
     onClearPasscode: () -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
+    val backupStatusColor = when {
+        backupStatusMessage.contains("failed", ignoreCase = true) ||
+            backupStatusMessage.contains("error", ignoreCase = true) ||
+            backupStatusMessage.contains("unable", ignoreCase = true) -> MaterialTheme.colorScheme.error
+
+        else -> MaterialTheme.colorScheme.primary
+    }
+
     CredFlowBackground {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.12f),
@@ -85,7 +99,7 @@ fun SettingsScreen(
                 item {
                     PageHeader(
                         title = "Settings",
-                        subtitle = "Manage profile, security, backups, and the account configuration used across the app."
+                        subtitle = "Manage profile, security, local backups, and the account configuration used across the app."
                     )
                 }
 
@@ -181,13 +195,13 @@ fun SettingsScreen(
                 item {
                     FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
                         Text(
-                            text = "Google Drive Backup",
+                            text = "Backup & Restore",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Back up your profile, settings, and ledger data to your app-private Drive storage.",
+                            text = "Export your profile, settings, and ledger data to a JSON file, then import it anytime on this device without Google Drive setup.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -196,7 +210,7 @@ fun SettingsScreen(
                             Text(
                                 text = backupStatusMessage,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = backupStatusColor,
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
@@ -209,7 +223,7 @@ fun SettingsScreen(
                                     onClick = onBackupToDrive,
                                     modifier = itemModifier
                                 ) {
-                                    Text("Back Up Now")
+                                    Text("Export Backup")
                                 }
                             },
                             second = { itemModifier ->
@@ -217,7 +231,7 @@ fun SettingsScreen(
                                     onClick = onRestoreFromDrive,
                                     modifier = itemModifier
                                 ) {
-                                    Text("Restore Backup")
+                                    Text("Import Backup")
                                 }
                             }
                         )
@@ -308,7 +322,18 @@ private fun SecurityToggleRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -340,20 +365,42 @@ private fun ThemeModeButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            modifier = modifier
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier
-        ) {
-            Text(label)
-        }
+    val containerColor = animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+        },
+        label = "theme-mode-container"
+    )
+    val contentColor = animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        label = "theme-mode-content"
+    )
+    val borderColor = animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        } else {
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.32f)
+        },
+        label = "theme-mode-border"
+    )
+
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(56.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor.value,
+            contentColor = contentColor.value
+        ),
+        border = BorderStroke(1.dp, borderColor.value),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+    ) {
+        Text(label)
     }
 }
 
@@ -402,8 +449,17 @@ private fun SettingsAccountRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f),
+                shape = RoundedCornerShape(22.dp)
+            )
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+                shape = RoundedCornerShape(22.dp)
+            )
             .clickable(enabled = canToggle) { onCheckedChange(!selected) }
-            .padding(vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(

@@ -2,11 +2,11 @@ package com.credflow
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,9 +30,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.credflow.data.auth.SessionRepository
 import com.credflow.data.backup.BackupJsonSerializer
-import com.credflow.data.backup.DriveBackupRepository
+import com.credflow.data.backup.FileBackupRepository
 import com.credflow.data.profile.UserProfileRepository
 import com.credflow.data.repository.FirebaseRepository
 import com.credflow.data.security.AppSecurityRepository
@@ -46,15 +45,10 @@ import com.credflow.ui.CredFlowTheme
 import com.credflow.ui.DashboardScreen
 import com.credflow.ui.ProfileSetupScreen
 import com.credflow.ui.SecuritySetupScreen
-import com.credflow.ui.SessionBootstrapScreen
 import com.credflow.ui.SettingsScreen
-import com.google.android.gms.auth.api.identity.AuthorizationRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.Scope
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
-
-private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
 class MainActivity : FragmentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -74,9 +68,8 @@ class MainActivity : FragmentActivity() {
     private fun AppRoot() {
         val settingsRepository = remember { AppSettingsRepository(applicationContext) }
         val securityRepository = remember { AppSecurityRepository(applicationContext) }
-        val sessionRepository = remember { SessionRepository() }
         val profileRepository = remember { UserProfileRepository() }
-        val driveBackupRepository = remember { DriveBackupRepository() }
+        val fileBackupRepository = remember { FileBackupRepository(applicationContext) }
         val firebaseRepository = remember { FirebaseRepository() }
         val biometricAuthManager = remember { BiometricAuthManager() }
         val navController = rememberNavController()
@@ -84,14 +77,10 @@ class MainActivity : FragmentActivity() {
 
         val settingsState by settingsRepository.settings.collectAsState()
         val securityState by securityRepository.state.collectAsState()
-        val sessionState by sessionRepository.state.collectAsState()
         val profileState by profileRepository.state.collectAsState()
 
         var backupStatusMessage by rememberSaveable { mutableStateOf("") }
         var lockErrorMessage by rememberSaveable { mutableStateOf("") }
-        var pendingDriveAction by remember { mutableStateOf<DriveAction?>(null) }
-
-        val authorizationClient = remember { Identity.getAuthorizationClient(this@MainActivity) }
         val biometricAvailable = remember { biometricAuthManager.canAuthenticate(this@MainActivity) }
 
         fun extractNestedMap(value: Any?): Map<String, Any?> {
@@ -100,119 +89,88 @@ class MainActivity : FragmentActivity() {
                 .orEmpty()
         }
 
-        fun runDriveAction(accessToken: String, action: DriveAction) {
+        fun defaultBackupFileName(): String {
+            val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+            return "credflow_backup_$timestamp.json"
+        }
+
+        fun restoreBackupJson(backupJson: String) {
             coroutineScope.launch {
-                when (action) {
-                    DriveAction.BACKUP -> {
-                        val backupPayload = firebaseRepository.exportBackup(
-                            profile = profileRepository.exportProfileMap(),
-                            settings = mapOf(
-                                "app" to settingsRepository.exportSettings(),
-                                "security" to securityRepository.exportSettings()
-                            )
-                        )
-                        val backupJson = BackupJsonSerializer.toJson(backupPayload)
-                        val result = driveBackupRepository.uploadBackup(accessToken, backupJson)
-                        backupStatusMessage = result.fold(
-                            onSuccess = { "Backup uploaded to Google Drive app storage." },
-                            onFailure = { throwable ->
-                                "Backup failed: ${throwable.localizedMessage ?: "unknown error"}"
-                            }
-                        )
+                runCatching {
+                    val payload = BackupJsonSerializer.fromJson(backupJson)
+                    firebaseRepository.restoreBackup(payload)
+                    val profileMap = payload.profile.filterValues { it != null }
+                        .mapValues { it.value as Any }
+                    profileRepository.restoreProfileMap(profileMap)
+                    settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
+                    securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
+                }.fold(
+                    onSuccess = {
+                        backupStatusMessage = "Backup restored from file."
+                    },
+                    onFailure = { throwable ->
+                        backupStatusMessage = "Restore failed: ${throwable.localizedMessage ?: "unknown error"}"
                     }
-
-                    DriveAction.RESTORE -> {
-                        val result = driveBackupRepository.downloadLatestBackup(accessToken)
-                        result.fold(
-                            onSuccess = { backupJson ->
-                                val payload = BackupJsonSerializer.fromJson(backupJson)
-                                firebaseRepository.restoreBackup(payload)
-                                val profileMap = payload.profile.filterValues { it != null }
-                                    .mapValues { it.value as Any }
-                                profileRepository.restoreProfileMap(profileMap)
-                                settingsRepository.restoreSettings(extractNestedMap(payload.settings["app"]))
-                                securityRepository.restoreSettings(extractNestedMap(payload.settings["security"]))
-                                backupStatusMessage = "Backup restored from Google Drive."
-                            },
-                            onFailure = { throwable ->
-                                backupStatusMessage = "Restore failed: ${throwable.localizedMessage ?: "unknown error"}"
-                            }
-                        )
-                    }
-                }
+                )
             }
         }
 
-        val driveAuthorizationLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.StartIntentSenderForResult()
-        ) { activityResult ->
-            try {
-                val authorizationResult = authorizationClient.getAuthorizationResultFromIntent(activityResult.data)
-                val accessToken = authorizationResult.accessToken
-                val action = pendingDriveAction
-                if (!accessToken.isNullOrBlank() && action != null) {
-                    runDriveAction(accessToken, action)
-                } else {
-                    backupStatusMessage = "Authorization completed, but no access token was returned."
-                }
-            } catch (exception: ApiException) {
-                backupStatusMessage = exception.localizedMessage ?: "Google authorization failed."
-            } finally {
-                pendingDriveAction = null
+        fun exportBackupToFile(uri: Uri) {
+            coroutineScope.launch {
+                val backupPayload = firebaseRepository.exportBackup(
+                    profile = profileRepository.exportProfileMap(),
+                    settings = mapOf(
+                        "app" to settingsRepository.exportSettings(),
+                        "security" to securityRepository.exportSettings()
+                    )
+                )
+                val backupJson = BackupJsonSerializer.toJson(backupPayload)
+                val result = fileBackupRepository.writeBackup(uri, backupJson)
+                backupStatusMessage = result.fold(
+                    onSuccess = { "Backup exported to file." },
+                    onFailure = { throwable ->
+                        "Backup export failed: ${throwable.localizedMessage ?: "unknown error"}"
+                    }
+                )
             }
         }
 
-        fun requestDriveAuthorization(action: DriveAction) {
-            pendingDriveAction = action
-            val request = AuthorizationRequest.builder()
-                .setRequestedScopes(listOf(Scope(DRIVE_APPDATA_SCOPE)))
-                .build()
-
-            authorizationClient.authorize(request)
-                .addOnSuccessListener { authorizationResult ->
-                    when {
-                        authorizationResult.hasResolution() -> {
-                            val pendingIntent = authorizationResult.pendingIntent
-                            if (pendingIntent != null) {
-                                driveAuthorizationLauncher.launch(
-                                    IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                                )
-                            } else {
-                                backupStatusMessage = "Authorization requires user approval, but the request could not be opened."
-                                pendingDriveAction = null
-                            }
-                        }
-
-                        !authorizationResult.accessToken.isNullOrBlank() -> {
-                            runDriveAction(authorizationResult.accessToken!!, action)
-                            pendingDriveAction = null
-                        }
-
-                        else -> {
-                            backupStatusMessage = "No Google Drive access token was returned."
-                            pendingDriveAction = null
-                        }
+        fun importBackupFromFile(uri: Uri) {
+            coroutineScope.launch {
+                val result = fileBackupRepository.readBackup(uri)
+                result.fold(
+                    onSuccess = ::restoreBackupJson,
+                    onFailure = { throwable ->
+                        backupStatusMessage = "Backup import failed: ${throwable.localizedMessage ?: "unknown error"}"
                     }
-                }
-                .addOnFailureListener { throwable ->
-                    backupStatusMessage = throwable.localizedMessage ?: "Unable to authorize Google Drive."
-                    pendingDriveAction = null
-                }
+                )
+            }
         }
 
-        LaunchedEffect(sessionState.user?.uid) {
+        val exportBackupLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json")
+        ) { uri ->
+            if (uri != null) {
+                exportBackupToFile(uri)
+            }
+        }
+
+        val importBackupLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                importBackupFromFile(uri)
+            }
+        }
+
+        LaunchedEffect(Unit) {
             profileRepository.observeCurrentUserProfile()
-            if (sessionState.user == null) {
-                backupStatusMessage = ""
-                lockErrorMessage = ""
-            }
         }
 
-        DisposableEffect(sessionState.user?.uid, securityState.lockEnabled, securityState.hasPasscode) {
+        DisposableEffect(securityState.lockEnabled, securityState.hasPasscode) {
             val observer = LifecycleEventObserver { _, event ->
                 if (
                     event == Lifecycle.Event.ON_STOP &&
-                    sessionState.user != null &&
                     securityState.lockEnabled &&
                     securityState.hasPasscode
                 ) {
@@ -227,11 +185,11 @@ class MainActivity : FragmentActivity() {
         }
 
         val profile = profileState.profile
-        val needsProfileSetup = sessionState.user != null && profileState.isLoading.not() && profile?.isProfileComplete != true
-        val needsSecuritySetup = sessionState.user != null &&
+        val needsProfileSetup = profileState.isLoading.not() && profile?.isProfileComplete != true
+        val needsSecuritySetup = profileState.isLoading.not() &&
             profile?.isProfileComplete == true &&
             !securityState.hasPasscode
-        val requiresUnlock = sessionState.user != null &&
+        val requiresUnlock = profileState.isLoading.not() &&
             profile?.isProfileComplete == true &&
             securityState.lockEnabled &&
             securityState.hasPasscode &&
@@ -239,14 +197,6 @@ class MainActivity : FragmentActivity() {
 
         CredFlowTheme(themeMode = settingsState.themeMode) {
             when {
-                sessionState.user == null -> {
-                    SessionBootstrapScreen(
-                        isLoading = sessionState.isLoading,
-                        errorMessage = sessionState.errorMessage,
-                        onRetry = sessionRepository::ensureSession
-                    )
-                }
-
                 profileState.isLoading -> {
                     CredFlowBackground {
                         Box(
@@ -370,8 +320,8 @@ class MainActivity : FragmentActivity() {
                                 onBiometricEnabledChanged = securityRepository::setBiometricEnabled,
                                 onEditProfile = { navController.navigate("profile") },
                                 onOpenSecuritySetup = { navController.navigate("securitySetup") },
-                                onBackupToDrive = { requestDriveAuthorization(DriveAction.BACKUP) },
-                                onRestoreFromDrive = { requestDriveAuthorization(DriveAction.RESTORE) },
+                                onBackupToDrive = { exportBackupLauncher.launch(defaultBackupFileName()) },
+                                onRestoreFromDrive = { importBackupLauncher.launch(arrayOf("application/json", "text/plain")) },
                                 onClearPasscode = { securityRepository.clearPasscode() }
                             ) {
                                 navController.popBackStack()
@@ -395,9 +345,4 @@ class MainActivity : FragmentActivity() {
         }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-}
-
-private enum class DriveAction {
-    BACKUP,
-    RESTORE
 }

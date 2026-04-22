@@ -1,6 +1,6 @@
 package com.credflow.data.profile
 
-import com.google.firebase.auth.FirebaseAuth
+import com.credflow.data.auth.LocalIdentityRepository
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -24,29 +24,24 @@ data class UserProfileState(
 )
 
 class UserProfileRepository(
-    private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    private val _state = MutableStateFlow(UserProfileState())
+    private val _state = MutableStateFlow(UserProfileState(isLoading = true))
     val state: StateFlow<UserProfileState> = _state.asStateFlow()
 
     private var registration: ListenerRegistration? = null
 
     fun observeCurrentUserProfile() {
         registration?.remove()
-        val user = auth.currentUser
-        if (user == null) {
-            _state.value = UserProfileState()
-            return
-        }
+        val userId = LocalIdentityRepository.userId()
 
         _state.value = UserProfileState(isLoading = true)
-        registration = profileDocument(user.uid).addSnapshotListener { snapshot, _ ->
+        registration = profileDocument(userId).addSnapshotListener { snapshot, _ ->
             val profile = if (snapshot == null || !snapshot.exists()) {
-                UserProfile(uid = user.uid)
+                UserProfile(uid = userId)
             } else {
                 UserProfile(
-                    uid = user.uid,
+                    uid = userId,
                     displayName = snapshot.getString("displayName").orEmpty(),
                     businessName = snapshot.getString("businessName").orEmpty(),
                     email = snapshot.getString("email").orEmpty(),
@@ -66,11 +61,11 @@ class UserProfileRepository(
         businessName: String,
         email: String
     ) {
-        val user = auth.currentUser ?: return
-        profileDocument(user.uid)
+        val userId = LocalIdentityRepository.userId()
+        profileDocument(userId)
             .set(
                 mapOf(
-                    "uid" to user.uid,
+                    "uid" to userId,
                     "phoneNumber" to FieldValue.delete(),
                     "displayName" to displayName.trim(),
                     "businessName" to businessName.trim(),
@@ -83,20 +78,18 @@ class UserProfileRepository(
     }
 
     suspend fun exportProfileMap(): Map<String, Any> {
-        val user = auth.currentUser ?: return emptyMap()
-        val snapshot = profileDocument(user.uid).get().await()
+        val snapshot = profileDocument(LocalIdentityRepository.userId()).get().await()
         return snapshot.data.orEmpty()
             .filterKeys { it != "phoneNumber" }
     }
 
     suspend fun restoreProfileMap(data: Map<String, Any>) {
-        val user = auth.currentUser ?: return
         val sanitizedData = data
             .filterKeys { it != "phoneNumber" }
             .toMutableMap<String, Any>()
         sanitizedData["phoneNumber"] = FieldValue.delete()
 
-        profileDocument(user.uid)
+        profileDocument(LocalIdentityRepository.userId())
             .set(sanitizedData, SetOptions.merge())
             .await()
     }

@@ -23,6 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -47,65 +48,61 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.credflow.data.settings.AppThemeMode
 
-private val Indigo500 = Color(0xFF5B5CE6)
-private val Indigo300 = Color(0xFFA5B4FC)
-private val Emerald500 = Color(0xFF10B981)
-private val Emerald300 = Color(0xFF6EE7B7)
-private val Amber500 = Color(0xFFF59E0B)
-private val Rose500 = Color(0xFFF43F5E)
-private val Slate950 = Color(0xFF0F172A)
-private val Slate900 = Color(0xFF111827)
-private val Slate800 = Color(0xFF1F2937)
-private val Slate700 = Color(0xFF334155)
-private val Slate500 = Color(0xFF64748B)
-private val Slate400 = Color(0xFF94A3B8)
-private val Slate200 = Color(0xFFE2E8F0)
-private val Slate100 = Color(0xFFF1F5F9)
-private val Slate050 = Color(0xFFF8FAFC)
+private val InkWashCharcoal = Color(0xFF4A4A4A)
+private val InkWashCharcoalDeep = Color(0xFF353535)
+private val InkWashCharcoalSoft = Color(0xFF5C5C5C)
+private val InkWashMist = Color(0xFFCBCBCB)
+private val InkWashCream = Color(0xFFFFFFE3)
+private val InkWashBlue = Color(0xFF6D8196)
+private val InkWashBlueDeep = Color(0xFF556779)
+private val InkWashBlueLight = Color(0xFF96A6B6)
+private val InkWashHighlight = Color(0xFFF4EFB9)
+private val InkWashDanger = Color(0xFFE0A5A5)
+private val InkWashCanvas = Color(0xFFF4F3ED)
 private val White = Color(0xFFFFFFFF)
 
 private val CredFlowLightColors: ColorScheme = lightColorScheme(
-    primary = Indigo500,
-    onPrimary = White,
-    primaryContainer = Color(0xFFE8E9FF),
-    onPrimaryContainer = Slate950,
-    secondary = Emerald500,
-    onSecondary = White,
-    secondaryContainer = Color(0xFFDCFCE7),
-    onSecondaryContainer = Slate950,
-    tertiary = Amber500,
-    onTertiary = White,
-    error = Rose500,
-    onError = White,
-    background = Slate050,
-    onBackground = Slate950,
+    primary = InkWashBlue,
+    onPrimary = InkWashCream,
+    primaryContainer = Color(0xFFDDE6EE),
+    onPrimaryContainer = InkWashCharcoal,
+    secondary = InkWashCharcoal,
+    onSecondary = InkWashCream,
+    secondaryContainer = Color(0xFFE7E4DD),
+    onSecondaryContainer = InkWashCharcoal,
+    tertiary = InkWashCream,
+    onTertiary = InkWashCharcoal,
+    error = InkWashDanger,
+    onError = InkWashCharcoal,
+    background = InkWashCanvas,
+    onBackground = InkWashCharcoal,
     surface = White,
-    onSurface = Slate950,
-    surfaceVariant = Color(0xFFF3F5FB),
-    onSurfaceVariant = Slate500,
-    outline = Color(0xFFE4E8F3)
+    onSurface = InkWashCharcoal,
+    surfaceVariant = Color(0xFFF1EFE8),
+    onSurfaceVariant = InkWashBlueDeep,
+    outline = InkWashMist
 )
 
 private val CredFlowDarkColors: ColorScheme = darkColorScheme(
-    primary = Indigo300,
-    onPrimary = Slate900,
-    primaryContainer = Color(0xFF2B316B),
-    onPrimaryContainer = White,
-    secondary = Emerald300,
-    onSecondary = Slate900,
-    secondaryContainer = Color(0xFF1F483B),
-    onSecondaryContainer = White,
-    tertiary = Color(0xFFFCD34D),
-    onTertiary = Slate900,
-    error = Color(0xFFFB7185),
-    onError = Slate900,
-    background = Slate900,
-    onBackground = White,
-    surface = Color(0xFF162132),
-    onSurface = White,
-    surfaceVariant = Color(0xFF233149),
-    onSurfaceVariant = Slate400,
-    outline = Color(0xFF344256)
+    primary = InkWashBlue,
+    onPrimary = InkWashCream,
+    primaryContainer = InkWashBlueDeep,
+    onPrimaryContainer = InkWashCream,
+    secondary = InkWashCream,
+    onSecondary = InkWashCharcoal,
+    secondaryContainer = InkWashCharcoalSoft,
+    onSecondaryContainer = InkWashCream,
+    tertiary = InkWashMist,
+    onTertiary = InkWashCharcoal,
+    error = InkWashDanger,
+    onError = InkWashCharcoal,
+    background = InkWashCharcoalDeep,
+    onBackground = InkWashCream,
+    surface = InkWashCharcoal,
+    onSurface = InkWashCream,
+    surfaceVariant = InkWashCharcoalSoft,
+    onSurfaceVariant = InkWashMist,
+    outline = InkWashBlueLight
 )
 
 private val LocalCredFlowDarkTheme = staticCompositionLocalOf { true }
@@ -139,6 +136,14 @@ private val CredFlowTypography = Typography(
     labelSmall = appStyle(BaseTypography.labelSmall, FontWeight.Medium, 0.04f)
 )
 
+private val CredFlowShapes = Shapes(
+    extraSmall = RoundedCornerShape(18.dp),
+    small = RoundedCornerShape(22.dp),
+    medium = RoundedCornerShape(28.dp),
+    large = RoundedCornerShape(32.dp),
+    extraLarge = RoundedCornerShape(36.dp)
+)
+
 @Composable
 fun CredFlowTheme(
     themeMode: AppThemeMode = AppThemeMode.DARK,
@@ -150,6 +155,7 @@ fun CredFlowTheme(
         MaterialTheme(
             colorScheme = if (useDarkTheme) CredFlowDarkColors else CredFlowLightColors,
             typography = CredFlowTypography,
+            shapes = CredFlowShapes,
             content = content
         )
     }
@@ -161,16 +167,16 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
     val backgroundBrush = if (useDarkTheme) {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF121C2C),
-                Color(0xFF101826),
+                Color(0xFF2F3134),
+                Color(0xFF3B3F45),
                 MaterialTheme.colorScheme.background
             )
         )
     } else {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xFFFDFEFF),
-                Color(0xFFF8FAFC),
+                White,
+                Color(0xFFF8F6F0),
                 MaterialTheme.colorScheme.background
             )
         )
@@ -193,9 +199,9 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
 @Composable
 private fun GlassBackdrop() {
     val useDarkTheme = LocalCredFlowDarkTheme.current
-    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.18f else 0.12f)
-    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.12f else 0.1f)
-    val tertiaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f)
+    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.16f else 0.1f)
+    val secondaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = if (useDarkTheme) 0.08f else 0.14f)
+    val tertiaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.06f else 0.08f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         drawCircle(
@@ -324,21 +330,21 @@ fun FlowCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (useDarkTheme) {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             } else {
-                White.copy(alpha = 0.64f)
+                White.copy(alpha = 0.78f)
             },
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
         border = BorderStroke(
             width = 1.dp,
             color = if (useDarkTheme) {
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.56f)
             } else {
-                White.copy(alpha = 0.72f)
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
             }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -349,11 +355,12 @@ fun FlowCard(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            accentColor.copy(alpha = if (useDarkTheme) 0.12f else 0.08f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = if (useDarkTheme) 0.96f else 0.52f)
+                            accentColor.copy(alpha = if (useDarkTheme) 0.13f else 0.08f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = if (useDarkTheme) 0.98f else 0.82f),
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (useDarkTheme) 0.68f else 0.52f)
                         ),
                         start = Offset.Zero,
-                        end = Offset.Infinite
+                        end = Offset(960f, 960f)
                     )
                 )
         ) {
@@ -361,14 +368,14 @@ fun FlowCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 14.dp, end = 12.dp)
-                    .size(84.dp)
+                    .size(104.dp)
                     .clip(CircleShape)
                     .background(accentColor.copy(alpha = if (useDarkTheme) 0.08f else 0.1f))
             )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp)
+                    .padding(horizontal = 20.dp, vertical = 18.dp)
             ) {
                 content()
             }
@@ -388,34 +395,34 @@ fun HeroPanel(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(32.dp))
             .border(
                 width = 1.dp,
                 color = if (useDarkTheme) {
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.8f)
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.56f)
                 } else {
-                    White.copy(alpha = 0.72f)
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                 },
-                shape = RoundedCornerShape(28.dp)
+                shape = RoundedCornerShape(32.dp)
             )
             .background(
                 Brush.linearGradient(
                     colors = if (useDarkTheme) {
                         listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f)
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f)
                         )
                     } else {
                         listOf(
-                            White.copy(alpha = 0.85f),
-                            Color(0xFFF3F6FF),
-                            White.copy(alpha = 0.9f)
+                            White.copy(alpha = 0.92f),
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.88f)
                         )
                     }
                 )
             )
-            .padding(22.dp)
+            .padding(horizontal = 22.dp, vertical = 24.dp)
     ) {
         Box(
             modifier = Modifier
@@ -460,8 +467,8 @@ fun MetricPill(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.54f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.34f), RoundedCornerShape(18.dp))
             .defaultMinSize(minHeight = 72.dp)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -505,8 +512,8 @@ fun StatusBadge(
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+            .background(color.copy(alpha = 0.14f))
+            .border(1.dp, color.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
     )
 }
@@ -522,8 +529,8 @@ fun AccentValueRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.56f))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.32f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -566,9 +573,9 @@ fun EmptyState(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f))
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.74f))
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.34f), RoundedCornerShape(28.dp))
                 .padding(24.dp)
         ) {
             Text(
@@ -594,11 +601,11 @@ fun formatMoney(value: Double): String {
 
 fun accountAccent(accountKind: com.credflow.data.models.AccountKind): Color {
     return when (accountKind) {
-        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> Emerald500
-        com.credflow.data.models.AccountKind.CREDIT_CARD -> Indigo500
+        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> InkWashMist
+        com.credflow.data.models.AccountKind.CREDIT_CARD -> InkWashBlue
     }
 }
 
-fun warningColor(): Color = Amber500
+fun warningColor(): Color = InkWashHighlight
 
-fun dangerColor(): Color = Rose500
+fun dangerColor(): Color = InkWashDanger

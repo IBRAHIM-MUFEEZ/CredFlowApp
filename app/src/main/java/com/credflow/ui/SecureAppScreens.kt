@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -29,72 +28,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.credflow.data.profile.UserProfile
-
-@Composable
-fun SessionBootstrapScreen(
-    isLoading: Boolean,
-    errorMessage: String,
-    onRetry: () -> Unit
-) {
-    CredFlowBackground {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(32.dp))
-
-            PageHeader(
-                title = "Preparing CredFlow",
-                subtitle = "CredFlow now opens without mobile number sign-in and creates your secure app session automatically."
-            )
-
-            HeroPanel(
-                title = "Automatic startup",
-                amount = if (isLoading) "SYNC" else "RETRY",
-                subtitle = "Your profile, ledger data, and backups stay connected without any sign-in prompt."
-            )
-
-            FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
-                Text(
-                    text = "Starting session",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = if (isLoading) {
-                        "Setting up your secure workspace."
-                    } else {
-                        errorMessage.ifBlank { "CredFlow couldn't start the app session." }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isLoading) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (isLoading) {
-                    CircularProgressIndicator()
-                } else {
-                    Button(
-                        onClick = onRetry,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Try Again")
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun ProfileSetupScreen(

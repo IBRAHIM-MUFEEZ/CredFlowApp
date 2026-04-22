@@ -8,7 +8,7 @@ import com.credflow.data.models.CustomerSummary
 import com.credflow.data.models.CustomerTransaction
 import com.credflow.data.models.FirestoreBackupPayload
 import com.credflow.data.models.IndianAccountCatalog
-import com.google.firebase.auth.FirebaseAuth
+import com.credflow.data.auth.LocalIdentityRepository
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -17,7 +17,6 @@ import java.time.Instant
 import kotlinx.coroutines.tasks.await
 
 class FirebaseRepository(
-    private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
     suspend fun addCustomer(name: String) {
@@ -226,10 +225,6 @@ class FirebaseRepository(
 
     fun listenAllData(onResult: (AppData) -> Unit) {
         val root = userRoot()
-        if (root == null) {
-            onResult(AppData(emptyList(), emptyList(), emptyList()))
-            return
-        }
 
         root.collection("customers").addSnapshotListener { cSnap, _ ->
             val customers = cSnap?.documents.orEmpty()
@@ -578,20 +573,19 @@ class FirebaseRepository(
         )
     }
 
-    private fun userRoot() = auth.currentUser?.uid?.let { uid ->
-        db.collection("users").document(uid)
-    }
+    private fun userRoot() = db.collection("users")
+        .document(LocalIdentityRepository.userId())
 
-    private fun customersCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+    private fun customersCollection() = userRoot()
         .collection("customers")
 
-    private fun accountsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+    private fun accountsCollection() = userRoot()
         .collection("accounts")
 
-    private fun transactionsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+    private fun transactionsCollection() = userRoot()
         .collection("transactions")
 
-    private fun paymentsCollection() = requireNotNull(userRoot()) { "User not authenticated." }
+    private fun paymentsCollection() = userRoot()
         .collection("payments")
 
     private data class RunningAccountTotal(
