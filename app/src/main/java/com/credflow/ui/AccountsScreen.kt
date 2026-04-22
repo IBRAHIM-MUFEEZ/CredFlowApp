@@ -16,6 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,13 +25,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.data.models.AccountKind
 import com.credflow.data.models.CardSummary
+import com.credflow.reminders.DueReminderScheduler
 import com.credflow.viewmodel.MainViewModel
 import kotlin.math.abs
 
@@ -39,6 +43,8 @@ fun AccountsScreen(
     vm: MainViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val dueReminderScheduler = remember(context) { DueReminderScheduler(context) }
     val cards by vm.cards.collectAsState()
     val creditCards = cards.filter { it.accountKind == AccountKind.CREDIT_CARD }
     val bankAccounts = cards.filter { it.accountKind == AccountKind.BANK_ACCOUNT }
@@ -81,12 +87,29 @@ fun AccountsScreen(
                 items(creditCards, key = { it.id }) { card ->
                     AccountCard(
                         card = card,
-                        onUpdateCreditDue = { amount, dueDate ->
+                        onAdjustPaid = { amount ->
+                            vm.addPayment(
+                                accountId = card.id,
+                                accountName = card.name,
+                                accountKind = card.accountKind,
+                                amount = amount
+                            )
+                        },
+                        onUpdateCreditDue = { amount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp ->
                             vm.updateCreditCardDue(
                                 accountId = card.id,
                                 accountName = card.name,
                                 amount = amount,
-                                dueDate = dueDate
+                                dueDate = dueDate,
+                                remindersEnabled = remindersEnabled,
+                                reminderEmail = reminderEmail,
+                                reminderWhatsApp = reminderWhatsApp
+                            )
+                            dueReminderScheduler.syncDueReminders(
+                                accountId = card.id,
+                                accountName = card.name,
+                                dueDate = dueDate,
+                                enabled = remindersEnabled
                             )
                         }
                     )
@@ -127,60 +150,77 @@ fun AccountSectionTitle(title: String) {
 @Composable
 fun AccountCard(
     card: CardSummary,
-    onUpdateCreditDue: ((amount: String, dueDate: String) -> Unit)? = null
+    onAdjustPaid: ((String) -> Unit)? = null,
+    onUpdateCreditDue: ((amount: String, dueDate: String, remindersEnabled: Boolean, reminderEmail: String, reminderWhatsApp: String) -> Unit)? = null
 ) {
+    var showPaidEditor by remember { mutableStateOf(false) }
     var showDueEditor by remember { mutableStateOf(false) }
 
     FlowCard(accentColor = accountAccent(card.accountKind)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = card.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = card.accountKind.label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-
-            if (card.accountKind == AccountKind.CREDIT_CARD && onUpdateCreditDue != null) {
-                TextButton(onClick = { showDueEditor = true }) {
-                    Text("Edit Due")
+        AdaptiveHeaderRow(
+            leading = {
+                Column {
+                    Text(
+                        text = card.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = card.accountKind.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            trailing = {
+                if (card.accountKind == AccountKind.CREDIT_CARD && onUpdateCreditDue != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (onAdjustPaid != null) {
+                            TextButton(onClick = { showPaidEditor = true }) {
+                                Text("Adjust Paid")
+                            }
+                        }
+                        TextButton(onClick = { showDueEditor = true }) {
+                            Text("Edit Due")
+                        }
+                    }
                 }
             }
-        }
+        )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MetricPill(
-                label = "Used",
-                value = formatMoney(card.bill),
-                color = accountAccent(card.accountKind),
-                modifier = Modifier.weight(1f)
-            )
-            MetricPill(
-                label = "Paid",
-                value = formatMoney(card.pending),
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        ResponsiveTwoPane(
+            first = { itemModifier ->
+                MetricPill(
+                    label = "Used",
+                    value = formatMoney(card.bill),
+                    color = accountAccent(card.accountKind),
+                    modifier = itemModifier
+                )
+            },
+            second = { itemModifier ->
+                MetricPill(
+                    label = "Personal Paid",
+                    value = formatMoney(card.pending),
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = itemModifier
+                )
+            }
+        )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        StatusBadge(
-            text = "Balance ${formatMoney(card.payable)}",
+        AccentValueRow(
+            label = "Balance",
+            value = formatMoney(card.payable),
             color = accountAccent(card.accountKind)
         )
 
@@ -189,12 +229,23 @@ fun AccountCard(
         }
     }
 
+    if (showPaidEditor && onAdjustPaid != null) {
+        CreditCardPaidDialog(
+            card = card,
+            onDismiss = { showPaidEditor = false },
+            onSave = { amount ->
+                onAdjustPaid(amount)
+                showPaidEditor = false
+            }
+        )
+    }
+
     if (showDueEditor && onUpdateCreditDue != null) {
         CreditCardDueDialog(
             card = card,
             onDismiss = { showDueEditor = false },
-            onSave = { amount, dueDate ->
-                onUpdateCreditDue(amount, dueDate)
+            onSave = { amount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp ->
+                onUpdateCreditDue(amount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp)
                 showDueEditor = false
             }
         )
@@ -202,8 +253,60 @@ fun AccountCard(
 }
 
 @Composable
+fun CreditCardPaidDialog(
+    card: CardSummary,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var paidAmount by remember(card.id) { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Adjust paid for ${card.name}",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Add the extra paid amount you want to record for this credit card.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = paidAmount,
+                    onValueChange = { paidAmount = it },
+                    label = { Text("Paid Amount") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    leadingIcon = { Text("₹") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(paidAmount) },
+                enabled = (paidAmount.toDoubleOrNull() ?: 0.0) > 0.0
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
 fun CreditCardDueStatus(card: CardSummary) {
-    val remainingDue = card.dueAmount - card.bill
+    val remainingDue = card.dueAmount - card.pending
     val statusColor = when {
         card.dueAmount <= 0.0 -> MaterialTheme.colorScheme.onSurfaceVariant
         remainingDue > 0.0 -> warningColor()
@@ -212,12 +315,22 @@ fun CreditCardDueStatus(card: CardSummary) {
     }
     val message = when {
         card.dueAmount <= 0.0 -> "No card due amount set."
-        remainingDue > 0.0 -> "You owe ${formatMoney(remainingDue)} to this credit card."
-        remainingDue < 0.0 -> "You have overpaid ${formatMoney(abs(remainingDue))} for this credit card."
+        remainingDue > 0.0 -> "You still need to pay ${formatMoney(remainingDue)} on this credit card."
+        remainingDue < 0.0 -> "You have overpaid ${formatMoney(abs(remainingDue))} on this credit card."
         else -> "This credit card due is fully covered."
     }
+    val balanceLabel = when {
+        card.dueAmount <= 0.0 -> "Due status"
+        remainingDue < 0.0 -> "Overpaid"
+        else -> "Remaining due"
+    }
+    val balanceValue = when {
+        card.dueAmount <= 0.0 -> formatMoney(0.0)
+        remainingDue < 0.0 -> formatMoney(abs(remainingDue))
+        else -> formatMoney(remainingDue)
+    }
 
-    Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(16.dp))
     Divider(color = MaterialTheme.colorScheme.surfaceVariant)
 
     Column(modifier = Modifier.padding(top = 12.dp)) {
@@ -227,23 +340,36 @@ fun CreditCardDueStatus(card: CardSummary) {
             fontWeight = FontWeight.SemiBold
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MetricPill(
-                label = "Due",
-                value = formatMoney(card.dueAmount),
-                color = statusColor,
-                modifier = Modifier.weight(1f)
-            )
-            MetricPill(
-                label = "Customer used",
-                value = formatMoney(card.bill),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        ResponsiveTwoPane(
+            first = { itemModifier ->
+                MetricPill(
+                    label = "Due",
+                    value = formatMoney(card.dueAmount),
+                    color = statusColor,
+                    modifier = itemModifier
+                )
+            },
+            second = { itemModifier ->
+                MetricPill(
+                    label = "Personal Paid",
+                    value = formatMoney(card.pending),
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = itemModifier
+                )
+            }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        AccentValueRow(
+            label = balanceLabel,
+            value = balanceValue,
+            color = statusColor
+        )
+        Text(
+            text = "Customer used for this card: ${formatMoney(card.bill)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp)
+        )
         if (card.dueDate.isNotBlank()) {
             Text(
                 text = "Due date: ${card.dueDate}",
@@ -251,6 +377,30 @@ fun CreditCardDueStatus(card: CardSummary) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
+        }
+        if (card.remindersEnabled) {
+            Text(
+                text = "Daily reminders: due date through the previous 5 days",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            if (card.reminderEmail.isNotBlank()) {
+                Text(
+                    text = "Email target: ${card.reminderEmail}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (card.reminderWhatsApp.isNotBlank()) {
+                Text(
+                    text = "WhatsApp target: ${card.reminderWhatsApp}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
         Text(
             text = message,
@@ -266,7 +416,7 @@ fun CreditCardDueStatus(card: CardSummary) {
 fun CreditCardDueDialog(
     card: CardSummary,
     onDismiss: () -> Unit,
-    onSave: (amount: String, dueDate: String) -> Unit
+    onSave: (amount: String, dueDate: String, remindersEnabled: Boolean, reminderEmail: String, reminderWhatsApp: String) -> Unit
 ) {
     var dueAmount by remember(card.id, card.dueAmount) {
         mutableStateOf(card.dueAmount.takeIf { it > 0.0 }?.toString().orEmpty())
@@ -274,16 +424,32 @@ fun CreditCardDueDialog(
     var dueDate by remember(card.id, card.dueDate) {
         mutableStateOf(card.dueDate)
     }
+    var remindersEnabled by remember(card.id, card.remindersEnabled) {
+        mutableStateOf(card.remindersEnabled)
+    }
+    var reminderEmail by remember(card.id, card.reminderEmail) {
+        mutableStateOf(card.reminderEmail)
+    }
+    var reminderWhatsApp by remember(card.id, card.reminderWhatsApp) {
+        mutableStateOf(card.reminderWhatsApp)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit ${card.name} due") },
+        title = {
+            Text(
+                text = "Edit ${card.name} due",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
         text = {
             Column {
                 OutlinedTextField(
                     value = dueAmount,
                     onValueChange = { dueAmount = it },
                     label = { Text("Credit Card Due Amount") },
+                    singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     leadingIcon = { Text("₹") },
                     modifier = Modifier
@@ -294,14 +460,65 @@ fun CreditCardDueDialog(
                     value = dueDate,
                     onValueChange = { dueDate = it },
                     label = { Text("Due Date (YYYY-MM-DD)") },
-                    modifier = Modifier.fillMaxWidth()
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Daily due reminders",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "One reminder per day from 5 days before the due date until the due date.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = remindersEnabled,
+                        onCheckedChange = { remindersEnabled = it }
+                    )
+                }
+                if (remindersEnabled) {
+                    OutlinedTextField(
+                        value = reminderEmail,
+                        onValueChange = { reminderEmail = it },
+                        label = { Text("Reminder Email") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp, bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = reminderWhatsApp,
+                        onValueChange = { reminderWhatsApp = it },
+                        label = { Text("WhatsApp Number") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(dueAmount, dueDate) },
-                enabled = dueAmount.toDoubleOrNull() != null
+                onClick = {
+                    onSave(
+                        dueAmount,
+                        dueDate,
+                        remindersEnabled,
+                        reminderEmail,
+                        reminderWhatsApp
+                    )
+                },
+                enabled = dueAmount.toDoubleOrNull() != null && dueDate.isNotBlank()
             ) {
                 Text("Save")
             }

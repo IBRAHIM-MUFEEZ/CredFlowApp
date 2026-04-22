@@ -106,7 +106,10 @@ class FirebaseRepository {
         accountId: String,
         accountName: String,
         dueAmount: Double,
-        dueDate: String
+        dueDate: String,
+        remindersEnabled: Boolean,
+        reminderEmail: String,
+        reminderWhatsApp: String
     ) {
         db.collection("accounts")
             .document(accountId)
@@ -116,7 +119,27 @@ class FirebaseRepository {
                     "accountType" to AccountKind.CREDIT_CARD.storageValue,
                     "type" to AccountKind.CREDIT_CARD.storageValue,
                     "dueAmount" to dueAmount,
-                    "dueDate" to dueDate
+                    "dueDate" to dueDate,
+                    "remindersEnabled" to remindersEnabled,
+                    "reminderEmail" to reminderEmail,
+                    "reminderWhatsApp" to reminderWhatsApp
+                ),
+                SetOptions.merge()
+            )
+            .await()
+    }
+
+    suspend fun toggleTransactionSettled(
+        transactionId: String,
+        isSettled: Boolean,
+        settledDate: String
+    ) {
+        db.collection("transactions")
+            .document(transactionId)
+            .set(
+                mapOf(
+                    "isSettled" to isSettled,
+                    "settledDate" to if (isSettled) settledDate else FieldValue.delete()
                 ),
                 SetOptions.merge()
             )
@@ -256,6 +279,9 @@ class FirebaseRepository {
             accountTotal.totalUsed += account.getDouble("bill") ?: 0.0
             accountTotal.dueAmount = account.getDouble("dueAmount") ?: 0.0
             accountTotal.dueDate = account.getString("dueDate").orEmpty()
+            accountTotal.remindersEnabled = account.getBoolean("remindersEnabled") == true
+            accountTotal.reminderEmail = account.getString("reminderEmail").orEmpty()
+            accountTotal.reminderWhatsApp = account.getString("reminderWhatsApp").orEmpty()
         }
 
         val customerTotals = linkedMapOf<String, RunningCustomerTotal>()
@@ -273,7 +299,7 @@ class FirebaseRepository {
             targetMap[customer.id] = RunningCustomerTotal(
                 id = customer.id,
                 name = name,
-                creditDueAmount = customer.getDouble("creditDueAmount")
+                manualPaidAmount = customer.getDouble("creditDueAmount")
                     ?: customer.getDouble("dueAmount")
                     ?: 0.0,
                 isDeleted = isDeleted
@@ -328,6 +354,10 @@ class FirebaseRepository {
                     )
                 }
                 customerTotal.totalAmount += amount
+                val isSettled = transaction.getBoolean("isSettled") == true
+                if (isSettled) {
+                    customerTotal.settledTransactionAmount += amount
+                }
 
                 customerTotal.transactions.add(
                     CustomerTransaction(
@@ -342,7 +372,9 @@ class FirebaseRepository {
                         amount = amount,
                         transactionDate = transaction.getString("transactionDate")
                             ?: transaction.getString("givenDate")
-                            ?: ""
+                            ?: "",
+                        isSettled = isSettled,
+                        settledDate = transaction.getString("settledDate").orEmpty()
                     )
                 )
             }
@@ -380,7 +412,10 @@ class FirebaseRepository {
                 pending = total.totalPaid,
                 payable = (total.totalUsed - total.totalPaid).coerceAtLeast(0.0),
                 dueAmount = total.dueAmount,
-                dueDate = total.dueDate
+                dueDate = total.dueDate,
+                remindersEnabled = total.remindersEnabled,
+                reminderEmail = total.reminderEmail,
+                reminderWhatsApp = total.reminderWhatsApp
             )
         }
 
@@ -400,13 +435,19 @@ class FirebaseRepository {
     }
 
     private fun RunningCustomerTotal.toSummary(): CustomerSummary {
+        val customerPaidAmount = manualPaidAmount + settledTransactionAmount
         return CustomerSummary(
             id = id,
             name = name,
             totalAmount = totalAmount,
-            creditDueAmount = creditDueAmount,
-            balance = (totalAmount - creditDueAmount).coerceAtLeast(0.0),
-            transactions = transactions.sortedByDescending { it.transactionDate },
+            creditDueAmount = customerPaidAmount,
+            manualPaidAmount = manualPaidAmount,
+            settledTransactionAmount = settledTransactionAmount,
+            balance = (totalAmount - customerPaidAmount).coerceAtLeast(0.0),
+            transactions = transactions.sortedWith(
+                compareByDescending<CustomerTransaction> { it.transactionDate }
+                    .thenByDescending { it.id }
+            ),
             isDeleted = isDeleted
         )
     }
@@ -418,13 +459,17 @@ class FirebaseRepository {
         var totalUsed: Double = 0.0,
         var totalPaid: Double = 0.0,
         var dueAmount: Double = 0.0,
-        var dueDate: String = ""
+        var dueDate: String = "",
+        var remindersEnabled: Boolean = false,
+        var reminderEmail: String = "",
+        var reminderWhatsApp: String = ""
     )
 
     private data class RunningCustomerTotal(
         val id: String,
         val name: String,
-        var creditDueAmount: Double = 0.0,
+        var manualPaidAmount: Double = 0.0,
+        var settledTransactionAmount: Double = 0.0,
         var totalAmount: Double = 0.0,
         val transactions: MutableList<CustomerTransaction> = mutableListOf(),
         val isDeleted: Boolean = false

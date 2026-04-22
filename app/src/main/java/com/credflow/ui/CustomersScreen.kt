@@ -1,9 +1,22 @@
 package com.credflow.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -11,11 +24,35 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.credflow.data.models.AccountKind
@@ -45,89 +82,78 @@ fun CustomersScreen(
     val deletedCustomers by vm.deletedCustomers.collectAsState()
     var viewMode by remember { mutableStateOf(CustomerViewMode.ACTIVE) }
 
-    val visibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) {
-        customers
-    } else {
-        deletedCustomers
-    }
+    val visibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) customers else deletedCustomers
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        PageHeader(
-            title = viewMode.label,
-            subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
-                "Manage customer ledgers, dues, and transactions."
-            } else {
-                "Restore customers or remove old records forever."
-            },
-            modifier = Modifier.padding(bottom = 16.dp),
-            trailing = {
-                TextButton(
-                    onClick = {
-                        viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
-                            CustomerViewMode.RECYCLE_BIN
-                        } else {
-                            CustomerViewMode.ACTIVE
+        item {
+            PageHeader(
+                title = viewMode.label,
+                subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
+                    "Manage customer ledgers, due collections, and settled transactions."
+                } else {
+                    "Restore customers or remove old records forever."
+                },
+                trailing = {
+                    TextButton(
+                        onClick = {
+                            viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
+                                CustomerViewMode.RECYCLE_BIN
+                            } else {
+                                CustomerViewMode.ACTIVE
+                            }
                         }
+                    ) {
+                        Text(
+                            if (viewMode == CustomerViewMode.ACTIVE) "Recycle Bin" else "Customers"
+                        )
                     }
+                }
+            )
+        }
+
+        if (visibleCustomers.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        if (viewMode == CustomerViewMode.ACTIVE) {
-                            "Recycle Bin"
+                    EmptyState(
+                        title = if (viewMode == CustomerViewMode.ACTIVE) {
+                            "No customers yet"
                         } else {
-                            "Customers"
+                            "Recycle bin is empty"
+                        },
+                        subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
+                            "Tap + to add your first customer ledger."
+                        } else {
+                            "Deleted customers will wait here before permanent removal."
                         }
                     )
                 }
             }
-        )
-
-        if (visibleCustomers.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                EmptyState(
-                    title = if (viewMode == CustomerViewMode.ACTIVE) {
-                        "No customers yet"
-                    } else {
-                        "Recycle bin is empty"
-                    },
-                    subtitle = if (viewMode == CustomerViewMode.ACTIVE) {
-                        "Tap + to add your first customer ledger."
-                    } else {
-                        "Deleted customers will wait here before permanent removal."
-                    }
-                )
-            }
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(
-                    items = visibleCustomers,
-                    key = { it.id }
-                ) { customer ->
-                    if (viewMode == CustomerViewMode.ACTIVE) {
-                        CustomerCard(
-                            customer = customer,
-                            vm = vm
-                        )
-                    } else {
-                        DeletedCustomerCard(
-                            customer = customer,
-                            onRestore = { vm.restoreCustomer(customer.id) },
-                            onDeleteForever = {
-                                vm.permanentlyDeleteCustomer(
-                                    customerId = customer.id,
-                                    customerName = customer.name
-                                )
-                            }
-                        )
-                    }
+            items(visibleCustomers, key = { it.id }) { customer ->
+                if (viewMode == CustomerViewMode.ACTIVE) {
+                    CustomerCard(customer = customer, vm = vm)
+                } else {
+                    DeletedCustomerCard(
+                        customer = customer,
+                        onRestore = { vm.restoreCustomer(customer.id) },
+                        onDeleteForever = {
+                            vm.permanentlyDeleteCustomer(
+                                customerId = customer.id,
+                                customerName = customer.name
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -141,10 +167,7 @@ fun CustomerCard(
 ) {
     var showAddTransaction by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
-    var showDueEditor by remember { mutableStateOf(false) }
-    var transactionFilter by remember(customer.id) {
-        mutableStateOf(TransactionTypeFilter.ALL)
-    }
+    var transactionFilter by remember(customer.id) { mutableStateOf(TransactionTypeFilter.ALL) }
 
     val filteredTransactions = customer.transactions.filter { transaction ->
         when (transactionFilter) {
@@ -158,31 +181,26 @@ fun CustomerCard(
         accentColor = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = customer.name,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "${customer.transactions.size} transaction(s)",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-
-                Row {
-                    TextButton(onClick = { showDueEditor = true }) {
-                        Text("Edit Due")
+        Column(modifier = Modifier.fillMaxWidth()) {
+            AdaptiveHeaderRow(
+                leading = {
+                    Column {
+                        Text(
+                            text = customer.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${customer.transactions.size} transaction(s)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
+                },
+                trailing = {
                     IconButton(
                         onClick = {
                             vm.deleteCustomer(
@@ -194,72 +212,69 @@ fun CustomerCard(
                         Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricPill(
-                    label = "Used",
-                    value = formatMoney(customer.totalAmount),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricPill(
-                    label = "Due Paid",
-                    value = formatMoney(customer.creditDueAmount),
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            StatusBadge(
-                text = "Balance ${formatMoney(customer.balance)}",
-                color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Transactions",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                TextButton(onClick = { showAddTransaction = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add Transaction")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add")
+            ResponsiveTwoPane(
+                first = { itemModifier ->
+                    MetricPill(
+                        label = "Used",
+                        value = formatMoney(customer.totalAmount),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = itemModifier
+                    )
+                },
+                second = { itemModifier ->
+                    MetricPill(
+                        label = "Customer Paid",
+                        value = formatMoney(customer.creditDueAmount),
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = itemModifier
+                    )
                 }
-            }
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            AccentValueRow(
+                label = "Balance Remaining",
+                value = formatMoney(customer.balance),
+                color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+            )
+
+            Text(
+                text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            CustomerSectionHeader(
+                title = "Transactions",
+                actionLabel = "Add",
+                onAction = { showAddTransaction = true }
+            )
 
             TransactionTypeDropdown(
                 selectedFilter = transactionFilter,
                 onFilterSelected = { transactionFilter = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp)
+                    .padding(top = 10.dp, bottom = 8.dp)
             )
 
             if (filteredTransactions.isEmpty()) {
-                Text(
-                    text = "No transactions for this selection.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                EmptyInlineState("No transactions for this selection.")
             } else {
                 filteredTransactions.forEach { transaction ->
                     TransactionRow(
                         transaction = transaction,
                         onEdit = { transactionToEdit = transaction },
-                        onDelete = { vm.deleteTransaction(transaction.id) }
+                        onDelete = { vm.deleteTransaction(transaction.id) },
+                        onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) }
                     )
                 }
             }
@@ -307,18 +322,51 @@ fun CustomerCard(
         )
     }
 
-    if (showDueEditor) {
-        DueAmountDialog(
-            customer = customer,
-            onDismiss = { showDueEditor = false },
-            onSave = { amount ->
-                vm.updateCustomerDueAmount(
-                    customerId = customer.id,
-                    customerName = customer.name,
-                    amount = amount
-                )
-                showDueEditor = false
+}
+
+@Composable
+private fun CustomerSectionHeader(
+    title: String,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    AdaptiveHeaderRow(
+        leading = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        trailing = {
+            TextButton(onClick = onAction) {
+                Icon(Icons.Filled.Add, contentDescription = actionLabel)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(actionLabel)
             }
+        }
+    )
+}
+
+@Composable
+private fun EmptyInlineState(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(14.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -329,73 +377,66 @@ fun DeletedCustomerCard(
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit
 ) {
-    FlowCard(
-        accentColor = dangerColor()
-    ) {
+    FlowCard(accentColor = dangerColor()) {
         Column {
             Text(
                 text = customer.name,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "${customer.transactions.size} transaction(s) in recycle bin",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricPill(
-                    label = "Used",
-                    value = formatMoney(customer.totalAmount),
-                    color = dangerColor(),
-                    modifier = Modifier.weight(1f)
-                )
-                MetricPill(
-                    label = "Balance",
-                    value = formatMoney(customer.balance),
-                    color = warningColor(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            ResponsiveTwoPane(
+                first = { itemModifier ->
+                    MetricPill(
+                        label = "Used",
+                        value = formatMoney(customer.totalAmount),
+                        color = dangerColor(),
+                        modifier = itemModifier
+                    )
+                },
+                second = { itemModifier ->
+                    MetricPill(
+                        label = "Balance",
+                        value = formatMoney(customer.balance),
+                        color = warningColor(),
+                        modifier = itemModifier
+                    )
+                }
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onRestore) {
-                    Icon(Icons.Filled.Restore, contentDescription = "Restore Customer")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Restore")
+            ResponsiveTwoPane(
+                first = { itemModifier ->
+                    OutlinedButton(
+                        onClick = onRestore,
+                        modifier = itemModifier
+                    ) {
+                        Icon(Icons.Filled.Restore, contentDescription = "Restore Customer")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Restore")
+                    }
+                },
+                second = { itemModifier ->
+                    OutlinedButton(
+                        onClick = onDeleteForever,
+                        modifier = itemModifier
+                    ) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete Forever")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete Forever")
+                    }
                 }
-                TextButton(onClick = onDeleteForever) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete Forever")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete Forever")
-                }
-            }
+            )
         }
-    }
-}
-
-@Composable
-fun AmountColumn(
-    label: String,
-    amount: Double
-) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall
-        )
-        Text(
-            text = "₹${String.format("%.2f", amount)}",
-            style = MaterialTheme.typography.bodyMedium
-        )
     }
 }
 
@@ -403,38 +444,86 @@ fun AmountColumn(
 fun TransactionRow(
     transaction: CustomerTransaction,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSettledChange: (Boolean) -> Unit
 ) {
-    Row(
+    val lineThrough = if (transaction.isSettled) TextDecoration.LineThrough else TextDecoration.None
+    val contentAlpha = if (transaction.isSettled) 0.56f else 1f
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(18.dp)
+            )
+            .padding(14.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transaction.name,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = "${transaction.accountName} - ${transaction.transactionDate}",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        Text(
-            text = "₹${String.format("%.2f", transaction.amount)}",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 8.dp)
+        AdaptiveHeaderRow(
+            leading = {
+                Column {
+                    Text(
+                        text = transaction.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = lineThrough,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${transaction.accountName} • ${transaction.transactionDate}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                        modifier = Modifier.padding(top = 4.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            trailing = {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = formatMoney(transaction.amount),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = lineThrough,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
+                        textAlign = TextAlign.End
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Checkbox(
+                            checked = transaction.isSettled,
+                            onCheckedChange = { checked -> onSettledChange(checked) }
+                        )
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Transaction")
+                        }
+                        IconButton(onClick = onDelete) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete Transaction")
+                        }
+                    }
+                }
+            }
         )
 
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Filled.Edit, contentDescription = "Edit Transaction")
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Delete Transaction")
-        }
+        Text(
+            text = if (transaction.isSettled) {
+                "Paid and cleared${transaction.settledDate.takeIf { it.isNotBlank() }?.let { " on $it" }.orEmpty()}"
+            } else {
+                "Pending collection"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (transaction.isSettled) MaterialTheme.colorScheme.primary else warningColor(),
+            modifier = Modifier.padding(top = 8.dp)
+        )
     }
 }
 
@@ -445,21 +534,36 @@ fun DueAmountDialog(
     onSave: (String) -> Unit
 ) {
     var dueAmount by remember(customer.id) {
-        mutableStateOf(customer.creditDueAmount.takeIf { it > 0.0 }?.toString().orEmpty())
+        mutableStateOf(customer.manualPaidAmount.takeIf { it > 0.0 }?.toString().orEmpty())
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Credit Due Amount") },
-        text = {
-            OutlinedTextField(
-                value = dueAmount,
-                onValueChange = { dueAmount = it },
-                label = { Text("Due Amount Paid") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                leadingIcon = { Text("₹") },
-                modifier = Modifier.fillMaxWidth()
+        title = {
+            Text(
+                text = "Adjust Manual Paid Amount",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Use this when you want to enter a manual paid adjustment outside the transaction checkbox list.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = dueAmount,
+                    onValueChange = { dueAmount = it },
+                    label = { Text("Manual Paid Amount") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    leadingIcon = { Text("₹") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         },
         confirmButton = {
             TextButton(
@@ -506,8 +610,10 @@ fun TransactionEditorDialog(
         mutableStateOf(transaction?.amount?.takeIf { it > 0.0 }?.toString().orEmpty())
     }
     var transactionDate by remember(transaction?.id) {
-        mutableStateOf(transaction?.transactionDate?.ifBlank { LocalDate.now().toString() }
-            ?: LocalDate.now().toString())
+        mutableStateOf(
+            transaction?.transactionDate?.ifBlank { LocalDate.now().toString() }
+                ?: LocalDate.now().toString()
+        )
     }
 
     val calculatedAmount = remember(amountExpression) {
@@ -529,7 +635,11 @@ fun TransactionEditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (transaction == null) "Add Transaction" else "Edit Transaction")
+            Text(
+                text = if (transaction == null) "Add Transaction" else "Edit Transaction",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         },
         text = {
             Column(
@@ -540,13 +650,17 @@ fun TransactionEditorDialog(
                 Text(
                     text = customer.name,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 OutlinedTextField(
                     value = transactionName,
                     onValueChange = { transactionName = it },
                     label = { Text("Transaction Name") },
+                    singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
@@ -555,7 +669,8 @@ fun TransactionEditorDialog(
                 OutlinedTextField(
                     value = transactionDate,
                     onValueChange = { transactionDate = it },
-                    label = { Text("Transaction Done Date (YYYY-MM-DD)") },
+                    label = { Text("Transaction Date (YYYY-MM-DD)") },
+                    singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
@@ -570,11 +685,7 @@ fun TransactionEditorDialog(
                 )
 
                 AccountOptionDropdown(
-                    label = if (selectedKind == AccountKind.BANK_ACCOUNT) {
-                        "Bank Account"
-                    } else {
-                        "Credit Card"
-                    },
+                    label = if (selectedKind == AccountKind.BANK_ACCOUNT) "Bank Account" else "Credit Card",
                     selectedOption = selectedAccount,
                     options = accountOptions,
                     onOptionSelected = { selectedAccountId = it.id },
@@ -587,6 +698,7 @@ fun TransactionEditorDialog(
                     value = amountExpression,
                     onValueChange = {},
                     readOnly = true,
+                    singleLine = true,
                     label = { Text("Amount / Calculator") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     leadingIcon = { Text("₹") },
@@ -597,11 +709,12 @@ fun TransactionEditorDialog(
 
                 Text(
                     text = if (calculatedAmount != null) {
-                        "= ₹${String.format("%.2f", calculatedAmount)}"
+                        "= ${formatMoney(calculatedAmount)}"
                     } else {
                         "Enter an amount or arithmetic expression"
                     },
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
@@ -703,6 +816,7 @@ private fun TransactionTypeDropdown(
             value = selectedFilter.label,
             onValueChange = {},
             readOnly = true,
+            singleLine = true,
             label = { Text("Transaction Type") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier

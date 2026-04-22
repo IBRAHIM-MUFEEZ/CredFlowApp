@@ -60,7 +60,10 @@ data class CardSummary(
     val pending: Double,
     val payable: Double,
     val dueAmount: Double = 0.0,
-    val dueDate: String = ""
+    val dueDate: String = "",
+    val remindersEnabled: Boolean = false,
+    val reminderEmail: String = "",
+    val reminderWhatsApp: String = ""
 )
 
 data class CustomerSummary(
@@ -68,6 +71,8 @@ data class CustomerSummary(
     val name: String,
     val totalAmount: Double,
     val creditDueAmount: Double,
+    val manualPaidAmount: Double,
+    val settledTransactionAmount: Double,
     val balance: Double,
     val transactions: List<CustomerTransaction>,
     val isDeleted: Boolean = false
@@ -81,7 +86,9 @@ data class CustomerTransaction(
     val accountName: String,
     val accountKind: AccountKind,
     val amount: Double,
-    val transactionDate: String
+    val transactionDate: String,
+    val isSettled: Boolean = false,
+    val settledDate: String = ""
 )
 
 data class AppData(

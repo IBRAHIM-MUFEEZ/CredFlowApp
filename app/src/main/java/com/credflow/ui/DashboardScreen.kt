@@ -4,13 +4,11 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -35,13 +33,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.credflow.data.models.CardSummary
 import com.credflow.viewmodel.MainViewModel
+import androidx.compose.ui.graphics.vector.ImageVector
 
 enum class DashboardTab {
     HOME, ACCOUNTS, CUSTOMERS, ANALYTICS
@@ -93,6 +92,7 @@ fun DashboardScreen(
                             onClick = { currentScreen = item.tab },
                             icon = { Icon(item.icon, contentDescription = item.label) },
                             label = { Text(item.label) },
+                            alwaysShowLabel = false,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -111,10 +111,19 @@ fun DashboardScreen(
                 label = "dashboard-tab"
             ) { tab ->
                 when (tab) {
-                    DashboardTab.HOME -> HomeScreen(cards, Modifier.padding(padding))
-                    DashboardTab.ACCOUNTS -> AccountsScreen(vm, Modifier.padding(padding))
-                    DashboardTab.CUSTOMERS -> CustomersScreen(vm, Modifier.padding(padding))
-                    DashboardTab.ANALYTICS -> AnalyticsScreen(vm, Modifier.padding(padding))
+                    DashboardTab.HOME -> HomeScreen(cards = cards, modifier = Modifier.padding(padding))
+                    DashboardTab.ACCOUNTS -> AccountsScreen(
+                        vm = vm,
+                        modifier = Modifier.padding(padding)
+                    )
+                    DashboardTab.CUSTOMERS -> CustomersScreen(
+                        vm = vm,
+                        modifier = Modifier.padding(padding)
+                    )
+                    DashboardTab.ANALYTICS -> AnalyticsScreen(
+                        vm = vm,
+                        modifier = Modifier.padding(padding)
+                    )
                 }
             }
         }
@@ -139,7 +148,7 @@ fun HomeScreen(
         item {
             PageHeader(
                 title = "CredFlow",
-                subtitle = "Track customers, cards, banks, and dues in one flow."
+                subtitle = "Operational credit control for customers, accounts, and dues."
             )
         }
 
@@ -147,28 +156,29 @@ fun HomeScreen(
             HeroPanel(
                 title = "Outstanding balance",
                 amount = formatMoney(totalBalance),
-                subtitle = "${cards.size} linked account(s)"
+                subtitle = "${cards.size} active account node(s) synchronized"
             )
         }
 
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricPill(
-                    label = "Used",
-                    value = formatMoney(totalUsed),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricPill(
-                    label = "Paid",
-                    value = formatMoney(totalPaid),
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            ResponsiveTwoPane(
+                first = { itemModifier ->
+                    MetricPill(
+                        label = "Used",
+                        value = formatMoney(totalUsed),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = itemModifier
+                    )
+                },
+                second = { itemModifier ->
+                    MetricPill(
+                        label = "Paid",
+                        value = formatMoney(totalPaid),
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = itemModifier
+                    )
+                }
+            )
         }
 
         if (cards.isEmpty()) {
@@ -190,61 +200,54 @@ fun HomeScreen(
 
             items(cards, key = { it.id }) { card ->
                 FlowCard(accentColor = accountAccent(card.accountKind)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = card.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = card.accountKind.label,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        StatusBadge(
-                            text = formatMoney(card.payable),
-                            color = accountAccent(card.accountKind)
+                    Column {
+                        Text(
+                            text = card.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = card.accountKind.label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    ResponsiveTwoPane(
+                        first = { itemModifier ->
+                            MetricPill(
+                                label = "Used",
+                                value = formatMoney(card.bill),
+                                color = accountAccent(card.accountKind),
+                                modifier = itemModifier
+                            )
+                        },
+                        second = { itemModifier ->
+                            MetricPill(
+                                label = "Paid",
+                                value = formatMoney(card.pending),
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = itemModifier
+                            )
+                        }
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        CompactMetric("Used", formatMoney(card.bill))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        CompactMetric("Paid", formatMoney(card.pending))
-                    }
+                    AccentValueRow(
+                        label = "Balance",
+                        value = formatMoney(card.payable),
+                        color = accountAccent(card.accountKind)
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun CompactMetric(
-    label: String,
-    value: String
-) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold
-        )
     }
 }

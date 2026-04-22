@@ -92,7 +92,10 @@ class MainViewModel(
         accountId: String,
         accountName: String,
         amount: String,
-        dueDate: String
+        dueDate: String,
+        remindersEnabled: Boolean,
+        reminderEmail: String,
+        reminderWhatsApp: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
 
@@ -101,7 +104,10 @@ class MainViewModel(
                 accountId = accountId,
                 accountName = accountName,
                 dueAmount = parsedAmount,
-                dueDate = dueDate
+                dueDate = dueDate,
+                remindersEnabled = remindersEnabled,
+                reminderEmail = reminderEmail.trim(),
+                reminderWhatsApp = reminderWhatsApp.trim()
             )
         }
     }
@@ -159,6 +165,19 @@ class MainViewModel(
     fun deleteTransaction(transactionId: String) {
         viewModelScope.launch {
             repository.deleteTransaction(transactionId)
+        }
+    }
+
+    fun toggleTransactionSettled(
+        transactionId: String,
+        isSettled: Boolean
+    ) {
+        viewModelScope.launch {
+            repository.toggleTransactionSettled(
+                transactionId = transactionId,
+                isSettled = isSettled,
+                settledDate = if (isSettled) LocalDate.now().toString() else ""
+            )
         }
     }
 

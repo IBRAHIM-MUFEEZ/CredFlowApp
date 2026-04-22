@@ -34,6 +34,7 @@ fun AccountKindDropdown(
             value = selectedKind.label,
             onValueChange = {},
             readOnly = true,
+            singleLine = true,
             label = { Text("Account Type") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
@@ -78,6 +79,7 @@ fun AccountOptionDropdown(
             value = selectedOption.name,
             onValueChange = {},
             readOnly = true,
+            singleLine = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
