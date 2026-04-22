@@ -72,7 +72,7 @@ private val SteelBlue = Color(0xFF5E7085)
 
 private val CredFlowDarkColors: ColorScheme = darkColorScheme(
     primary = SignalCyan,
-    onPrimary = DeepSpace,
+    onPrimary = SoftWhite,
     primaryContainer = Color(0xFF123447),
     onPrimaryContainer = SoftWhite,
     secondary = SignalBlue,
@@ -80,9 +80,9 @@ private val CredFlowDarkColors: ColorScheme = darkColorScheme(
     secondaryContainer = Color(0xFF132B43),
     onSecondaryContainer = SoftWhite,
     tertiary = NeonMint,
-    onTertiary = DeepSpace,
+    onTertiary = SoftWhite,
     error = AlertRed,
-    onError = DeepSpace,
+    onError = SoftWhite,
     background = DeepSpace,
     onBackground = SoftWhite,
     surface = PanelSurface,
@@ -344,7 +344,8 @@ fun FlowCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
