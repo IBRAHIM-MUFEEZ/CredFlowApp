@@ -53,65 +53,65 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.credflow.data.settings.AppThemeMode
 
-private val DafiraNight = Color(0xFF060B12)
-private val DafiraNightDeep = Color(0xFF0B121C)
-private val DafiraNightSoft = Color(0xFF121B28)
-private val DafiraNightRaised = Color(0xFF182435)
-private val DafiraOutline = Color(0xFF2B3B52)
-private val DafiraCanvas = Color(0xFFF4F7FB)
-private val DafiraWhite = Color(0xFFFFFFFF)
-private val DafiraText = Color(0xFFF5F7FA)
-private val DafiraMuted = Color(0xFF98A7BB)
-private val DafiraBlue = Color(0xFF1E7FFF)
-private val DafiraBlueDeep = Color(0xFF1453B8)
-private val DafiraBlueLight = Color(0xFF77AAFF)
-private val DafiraGreen = Color(0xFF22C55E)
-private val DafiraGreenSoft = Color(0xFF9CF0B6)
-private val DafiraRed = Color(0xFFF04452)
-private val DafiraRedSoft = Color(0xFFFF9AA4)
+private val RadafiqNight = Color(0xFF0A0612)
+private val RadafiqNightDeep = Color(0xFF100A1E)
+private val RadafiqNightSoft = Color(0xFF1A1030)
+private val RadafiqNightRaised = Color(0xFF231540)
+private val RadafiqOutline = Color(0xFF3D2B6B)
+private val RadafiqCanvas = Color(0xFFF5F7FF)
+private val RadafiqWhite = Color(0xFFFFFFFF)
+private val RadafiqText = Color(0xFFF0EEFF)
+private val RadafiqMuted = Color(0xFF9B8EC4)
+private val RadafiqPurple = Color(0xFF667EEA)
+private val RadafiqViolet = Color(0xFF764BA2)
+private val RadafiqPurpleLight = Color(0xFFADB8F5)
+private val RadafiqPink = Color(0xFFF093FB)
+private val RadafiqPinkSoft = Color(0xFFFAC8FD)
+private val RadafiqRed = Color(0xFFF5576C)
+private val RadafiqRedSoft = Color(0xFFFFAAB5)
 
 private val CredFlowLightColors: ColorScheme = lightColorScheme(
-    primary = DafiraBlue,
-    onPrimary = DafiraWhite,
-    primaryContainer = Color(0xFFD8E7FF),
-    onPrimaryContainer = DafiraNightDeep,
-    secondary = DafiraGreen,
-    onSecondary = DafiraWhite,
-    secondaryContainer = Color(0xFFDFF8E7),
-    onSecondaryContainer = DafiraNightDeep,
-    tertiary = Color(0xFFE9F3FF),
-    onTertiary = DafiraNightDeep,
-    error = DafiraRed,
-    onError = DafiraWhite,
-    background = DafiraCanvas,
-    onBackground = DafiraNightDeep,
-    surface = DafiraWhite,
-    onSurface = DafiraNightDeep,
-    surfaceVariant = Color(0xFFEAF0F8),
-    onSurfaceVariant = Color(0xFF52647C),
-    outline = Color(0xFFB9C6D8)
+    primary = RadafiqPurple,
+    onPrimary = RadafiqWhite,
+    primaryContainer = Color(0xFFDDE3FF),
+    onPrimaryContainer = Color(0xFF1A0A40),
+    secondary = RadafiqViolet,
+    onSecondary = RadafiqWhite,
+    secondaryContainer = Color(0xFFEAD8FF),
+    onSecondaryContainer = Color(0xFF1A0A40),
+    tertiary = Color(0xFFF5F0FF),
+    onTertiary = Color(0xFF1A0A40),
+    error = RadafiqRed,
+    onError = RadafiqWhite,
+    background = RadafiqCanvas,
+    onBackground = Color(0xFF1A0A40),
+    surface = RadafiqWhite,
+    onSurface = Color(0xFF1A0A40),
+    surfaceVariant = Color(0xFFEDE8FF),
+    onSurfaceVariant = Color(0xFF5A4880),
+    outline = Color(0xFFBDB0E0)
 )
 
 private val CredFlowDarkColors: ColorScheme = darkColorScheme(
-    primary = DafiraBlue,
-    onPrimary = DafiraWhite,
-    primaryContainer = DafiraBlueDeep,
-    onPrimaryContainer = DafiraText,
-    secondary = DafiraGreen,
-    onSecondary = DafiraWhite,
-    secondaryContainer = Color(0xFF143323),
-    onSecondaryContainer = DafiraGreenSoft,
-    tertiary = DafiraBlueLight,
-    onTertiary = DafiraNightDeep,
-    error = DafiraRed,
-    onError = DafiraWhite,
-    background = DafiraNight,
-    onBackground = DafiraText,
-    surface = DafiraNightDeep,
-    onSurface = DafiraText,
-    surfaceVariant = DafiraNightSoft,
-    onSurfaceVariant = DafiraMuted,
-    outline = DafiraOutline
+    primary = RadafiqPurple,
+    onPrimary = RadafiqWhite,
+    primaryContainer = RadafiqViolet,
+    onPrimaryContainer = RadafiqText,
+    secondary = RadafiqPink,
+    onSecondary = Color(0xFF1A0A40),
+    secondaryContainer = Color(0xFF2A1550),
+    onSecondaryContainer = RadafiqPinkSoft,
+    tertiary = RadafiqPurpleLight,
+    onTertiary = RadafiqNightDeep,
+    error = RadafiqRed,
+    onError = RadafiqWhite,
+    background = RadafiqNight,
+    onBackground = RadafiqText,
+    surface = RadafiqNightDeep,
+    onSurface = RadafiqText,
+    surfaceVariant = RadafiqNightSoft,
+    onSurfaceVariant = RadafiqMuted,
+    outline = RadafiqOutline
 )
 
 private val LocalCredFlowDarkTheme = staticCompositionLocalOf { true }
@@ -165,9 +165,9 @@ fun CredFlowTheme(
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             val statusBarColor = if (useDarkTheme) {
-                DafiraNightDeep
+                RadafiqNightDeep
             } else {
-                Color(0xFFD8E7FF)
+                Color(0xFFDDE3FF)
             }
             window.statusBarColor = statusBarColor.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
@@ -190,16 +190,16 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
     val backgroundBrush = if (useDarkTheme) {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF03060C),
-                Color(0xFF08111C),
+                Color(0xFF06030F),
+                Color(0xFF0E0820),
                 MaterialTheme.colorScheme.background
             )
         )
     } else {
         Brush.verticalGradient(
             colors = listOf(
-                DafiraWhite,
-                Color(0xFFF7FAFF),
+                RadafiqWhite,
+                Color(0xFFF0EEFF),
                 MaterialTheme.colorScheme.background
             )
         )
@@ -222,9 +222,9 @@ fun CredFlowBackground(content: @Composable () -> Unit) {
 @Composable
 private fun GlassBackdrop() {
     val useDarkTheme = LocalCredFlowDarkTheme.current
-    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = if (useDarkTheme) 0.14f else 0.1f)
-    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = if (useDarkTheme) 0.1f else 0.12f)
-    val tertiaryGlow = MaterialTheme.colorScheme.error.copy(alpha = if (useDarkTheme) 0.05f else 0.06f)
+    val primaryGlow = RadafiqPurple.copy(alpha = if (useDarkTheme) 0.18f else 0.12f)
+    val secondaryGlow = RadafiqPink.copy(alpha = if (useDarkTheme) 0.12f else 0.1f)
+    val tertiaryGlow = RadafiqViolet.copy(alpha = if (useDarkTheme) 0.1f else 0.08f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         drawCircle(
@@ -358,7 +358,7 @@ fun FlowCard(
             containerColor = if (useDarkTheme) {
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             } else {
-                DafiraWhite.copy(alpha = 0.82f)
+                RadafiqWhite.copy(alpha = 0.82f)
             },
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
@@ -438,7 +438,7 @@ fun HeroPanel(
                         )
                     } else {
                         listOf(
-                            DafiraWhite.copy(alpha = 0.92f),
+                            RadafiqWhite.copy(alpha = 0.92f),
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
                             MaterialTheme.colorScheme.tertiary.copy(alpha = 0.88f)
                         )
@@ -624,11 +624,11 @@ fun formatMoney(value: Double): String {
 
 fun accountAccent(accountKind: com.credflow.data.models.AccountKind): Color {
     return when (accountKind) {
-        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> DafiraGreen
-        com.credflow.data.models.AccountKind.CREDIT_CARD -> DafiraRed
+        com.credflow.data.models.AccountKind.BANK_ACCOUNT -> RadafiqPurple
+        com.credflow.data.models.AccountKind.CREDIT_CARD -> RadafiqRed
     }
 }
 
-fun warningColor(): Color = DafiraRed
+fun warningColor(): Color = RadafiqRed
 
-fun dangerColor(): Color = DafiraRedSoft
+fun dangerColor(): Color = RadafiqRedSoft

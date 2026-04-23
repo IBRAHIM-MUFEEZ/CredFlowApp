@@ -383,7 +383,7 @@ private fun HomeGreetingHeader(
             .filter { it.isNotBlank() }
             .take(2)
             .joinToString(separator = "") { it.first().uppercaseChar().toString() }
-            .ifBlank { "DA" }
+            .ifBlank { "RA" }
     }
 
     Row(

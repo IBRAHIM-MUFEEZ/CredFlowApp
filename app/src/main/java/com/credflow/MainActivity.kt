@@ -284,7 +284,7 @@ class MainActivity : FragmentActivity() {
                             {
                                 biometricAuthManager.authenticate(
                                     activity = this@MainActivity,
-                                    title = "Unlock Dafira",
+                                    title = "Unlock Radafiq",
                                     subtitle = "Verify with fingerprint, face unlock, or device credential.",
                                     onSuccess = {
                                         lockErrorMessage = ""

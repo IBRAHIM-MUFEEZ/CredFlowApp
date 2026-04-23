@@ -86,6 +86,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
+    // Coil removed — logos are bundled as local vector drawables
+
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -94,8 +95,11 @@ fun CustomersScreen(
     val deletedCustomers by vm.deletedCustomers.collectAsState()
     var viewMode by remember { mutableStateOf(CustomerViewMode.ACTIVE) }
     var expandedCustomerId by rememberSaveable(viewMode) { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val visibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) customers else deletedCustomers
+    val allVisibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) customers else deletedCustomers
+    val visibleCustomers = if (searchQuery.isBlank()) allVisibleCustomers
+    else allVisibleCustomers.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
     LazyColumn(
         modifier = modifier
@@ -132,6 +136,17 @@ fun CustomersScreen(
                         }
                     }
                 }
+            )
+        }
+
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Search customers") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -477,7 +492,7 @@ private fun initialsFor(name: String): String {
 
     return parts.joinToString(separator = "") { part ->
         part.first().uppercaseChar().toString()
-    }.ifBlank { "DA" }
+    }.ifBlank { "RA" }
 }
 
 @Composable
