@@ -7,13 +7,13 @@ plugins {
 }
 
 android {
-    namespace = "com.credflow"
+    namespace = "com.radafiq"
 
     // ✅ Updated (important)
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.credflow"
+        applicationId = "com.radafiq"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

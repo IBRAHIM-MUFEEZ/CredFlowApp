@@ -1,4 +1,4 @@
-{
+﻿{
   "project_info": {
     "project_number": "109696540700",
     "firebase_url": "https://my-awesome-project-b08aa.firebaseio.com",
@@ -10,7 +10,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:109696540700:android:6e878e42db9dc37bd3bfd9",
         "android_client_info": {
-          "package_name": "com.credflow"
+          "package_name": "com.radafiq"
         }
       },
       "oauth_client": [

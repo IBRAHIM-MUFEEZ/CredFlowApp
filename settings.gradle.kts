@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CredFlowApp"
+rootProject.name = "RadafiqApp"
 include(":app")
