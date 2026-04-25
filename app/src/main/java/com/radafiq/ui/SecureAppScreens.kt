@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -42,8 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Paint
@@ -70,11 +73,15 @@ private val RecoveryQuestions = listOf(
 @Composable
 fun ProfileSetupScreen(
     profile: UserProfile?,
-    onSave: (displayName: String, businessName: String, email: String) -> Unit
+    onSave: (displayName: String, businessName: String, email: String, photoUrl: String) -> Unit,
+    onSignInWithGoogle: (() -> Unit)? = null,
+    googleSignInInProgress: Boolean = false,
+    loginRestoreInProgress: Boolean = false
 ) {
     var displayName by remember(profile?.displayName) { mutableStateOf(profile?.displayName.orEmpty()) }
     var businessName by remember(profile?.businessName) { mutableStateOf(profile?.businessName.orEmpty()) }
     var email by remember(profile?.email) { mutableStateOf(profile?.email.orEmpty()) }
+    var photoUrl by remember(profile?.photoUrl) { mutableStateOf(profile?.photoUrl.orEmpty()) }
 
     RadafiqBackground {
         Column(
@@ -88,10 +95,66 @@ fun ProfileSetupScreen(
 
             PageHeader(
                 title = "Set Up Profile",
-                subtitle = "Create the business identity that appears across your ledgers, reminders, and backups."
+                subtitle = "Sign in with Google to connect your account, auto-fill your profile, and instantly restore your data from Google Drive."
             )
 
+            // Google Sign-In card
+            if (onSignInWithGoogle != null) {
+                FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
+                    Text(
+                        text = if (loginRestoreInProgress) "Restoring your data..." else "Sign in with Google",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (loginRestoreInProgress) {
+                            "Fetching your latest backup from Google Drive. This may take a moment."
+                        } else {
+                            "One tap to sign in, connect Google Drive, and restore your latest backup automatically."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (loginRestoreInProgress) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                        )
+                    } else {
+                        Button(
+                            onClick = onSignInWithGoogle,
+                            enabled = !googleSignInInProgress,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (googleSignInInProgress) "Signing in..." else "Continue with Google")
+                        }
+                    }
+                }
+            }
+
             FlowCard(accentColor = MaterialTheme.colorScheme.secondary) {
+                // Profile photo
+                if (photoUrl.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .align(Alignment.CenterHorizontally)
+                    ) {
+                        coil.compose.AsyncImage(
+                            model = photoUrl,
+                            contentDescription = "Profile photo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 Text(
                     text = "Profile details",
                     style = MaterialTheme.typography.titleMedium,
@@ -124,7 +187,7 @@ fun ProfileSetupScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { onSave(displayName, businessName, email) },
+                    onClick = { onSave(displayName, businessName, email, photoUrl) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = displayName.isNotBlank() && businessName.isNotBlank()
                 ) {
@@ -157,7 +220,7 @@ fun SecuritySetupScreen(
     var recoveryAnswer by remember { mutableStateOf("") }
     var useBiometric by remember(biometricAvailable) { mutableStateOf(biometricAvailable) }
 
-    val passcodesMatch = passcode.length >= 4 && passcode == confirmPasscode
+    val passcodesMatch = passcode.length == 6 && passcode == confirmPasscode
     val hasRecoveryDetails = selectedRecoveryQuestion.isNotBlank() && recoveryAnswer.isNotBlank()
 
     RadafiqBackground {
@@ -249,7 +312,7 @@ fun SecuritySetupScreen(
 
                 if (passcode.isNotBlank() && !passcodesMatch) {
                     Text(
-                        text = "Passcodes must match and contain at least 4 digits.",
+                        text = "Passcodes must match and contain exactly 6 digits.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 12.dp)
@@ -305,7 +368,7 @@ fun ChangePasscodeScreen(
     }
     var localError by remember { mutableStateOf("") }
 
-    val passcodesMatch = newPasscode.length >= 4 && newPasscode == confirmPasscode
+    val passcodesMatch = newPasscode.length == 6 && newPasscode == confirmPasscode
     val canSave = currentPasscode.isNotBlank() &&
         passcodesMatch &&
         selectedRecoveryQuestion.isNotBlank() &&
@@ -423,7 +486,7 @@ fun ChangePasscodeScreen(
 
                 if (newPasscode.isNotBlank() && !passcodesMatch) {
                     Text(
-                        text = "New passcodes must match and contain at least 4 digits.",
+                        text = "New passcodes must match and contain exactly 6 digits.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 12.dp)
@@ -487,8 +550,10 @@ fun AppLockScreen(
     // false = biometric prompt shown first; true = PIN entry shown (after biometric dismissed/failed)
     var showPinEntry by remember { mutableStateOf(false) }
     val recoveryAvailable = recoveryQuestion.isNotBlank() && onResetWithRecovery != null
-    val recoveryPasscodesMatch = newPasscode.length >= 4 && newPasscode == confirmNewPasscode
+    val recoveryPasscodesMatch = newPasscode.length == 6 && newPasscode == confirmNewPasscode
     val canUseBiometric = biometricEnabled && biometricAvailable && onUnlockWithBiometric != null
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     // Auto-trigger biometric on first composition
     LaunchedEffect(Unit) {
@@ -511,6 +576,14 @@ fun AppLockScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .clickable(
+                    enabled = showPinEntry && !showRecoveryFlow,
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                }
                 .padding(16.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
@@ -707,7 +780,7 @@ fun AppLockScreen(
 
                     if (newPasscode.isNotBlank() && !recoveryPasscodesMatch) {
                         Text(
-                            text = "New passcodes must match and contain at least 4 digits.",
+                            text = "New passcodes must match and contain exactly 6 digits.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = 12.dp)
@@ -751,7 +824,16 @@ fun AppLockScreen(
                             Icon(
                                 imageVector = Icons.Default.Fingerprint,
                                 contentDescription = "Biometric unlock",
-                                modifier = Modifier.size(64.dp),
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                    ) {
+                                        passcode = ""
+                                        localError = ""
+                                        onUnlockWithBiometric?.invoke()
+                                    },
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -768,7 +850,6 @@ fun AppLockScreen(
                     } else {
                         // PIN entry
                         val focusRequester = remember { FocusRequester() }
-                        val keyboardController = LocalSoftwareKeyboardController.current
 
                         LaunchedEffect(showPinEntry) {
                             if (showPinEntry) {
@@ -780,7 +861,7 @@ fun AppLockScreen(
                         }
 
                         LaunchedEffect(passcode) {
-                            if (passcode.length >= 4) {
+                            if (passcode.length == 6) {
                                 val unlocked = onUnlockWithPasscode(passcode)
                                 if (!unlocked && passcode.length == 6) {
                                     localError = "Incorrect passcode."
@@ -805,53 +886,72 @@ fun AppLockScreen(
                         )
 
                         // Clickable bullet dots — tap to re-focus and show keyboard
-                        Row(
+                        // Tap anywhere outside dots hides keyboard
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 16.dp)
-                                .clickable {
-                                    try {
-                                        focusRequester.requestFocus()
-                                        keyboardController?.show()
-                                    } catch (_: Exception) {}
-                                },
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                ) {
+                                    keyboardController?.hide()
+                                }
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            repeat(6) { index ->
-                                Box(
-                                    modifier = Modifier
-                                        .padding(horizontal = 10.dp)
-                                        .size(16.dp)
-                                        .background(
-                                            color = if (index < passcode.length)
-                                                MaterialTheme.colorScheme.primary
-                                            else
-                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                            shape = CircleShape
-                                        )
-                                )
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                repeat(6) { index ->
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 10.dp)
+                                            .size(16.dp)
+                                            .clickable(
+                                                indication = null,
+                                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                            ) {
+                                                try {
+                                                    focusRequester.requestFocus()
+                                                    keyboardController?.show()
+                                                } catch (_: Exception) {}
+                                            }
+                                            .background(
+                                                color = if (index < passcode.length)
+                                                    MaterialTheme.colorScheme.primary
+                                                else
+                                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                                shape = CircleShape
+                                            )
+                                    )
+                                }
                             }
                         }
 
                         if (canUseBiometric) {
                             Spacer(modifier = Modifier.height(4.dp))
-                            TextButton(
-                                onClick = {
-                                    showPinEntry = false
-                                    passcode = ""
-                                    localError = ""
-                                    onUnlockWithBiometric?.invoke()
-                                },
-                                modifier = Modifier.fillMaxWidth()
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Fingerprint,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
+                                    contentDescription = "Use biometrics",
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                        ) {
+                                            passcode = ""
+                                            localError = ""
+                                            onUnlockWithBiometric?.invoke()
+                                        },
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
-                                Spacer(modifier = Modifier.size(6.dp))
-                                Text("Use Biometrics")
                             }
                         }
                     }

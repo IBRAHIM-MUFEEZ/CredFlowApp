@@ -9,12 +9,15 @@ import com.radafiq.data.models.CustomerTransaction
 import com.radafiq.data.models.FirestoreBackupPayload
 import com.radafiq.data.models.IndianAccountCatalog
 import com.radafiq.data.auth.LocalIdentityRepository
+import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.tasks.await
 
 class FirebaseRepository(
@@ -159,7 +162,11 @@ class FirebaseRepository(
         accountKind: AccountKind,
         customerName: String,
         amount: Double,
-        transactionDate: String
+        transactionDate: String,
+        dueDate: String = "",
+        emiGroupId: String = "",
+        emiIndex: Int = 0,
+        emiTotal: Int = 0
     ) {
         val data = mutableMapOf<String, Any>(
             "customerId" to customerId,
@@ -172,8 +179,23 @@ class FirebaseRepository(
             "transactionDate" to transactionDate,
             "givenDate" to transactionDate
         )
-
+        if (dueDate.isNotBlank()) data["dueDate"] = dueDate
+        if (emiGroupId.isNotBlank()) {
+            data["emiGroupId"] = emiGroupId
+            data["emiIndex"] = emiIndex
+            data["emiTotal"] = emiTotal
+        }
         transactionsCollection().add(data).await()
+    }
+
+    suspend fun addEmiTransactionsBatch(instalments: List<Map<String, Any>>) {
+        // Firestore batch limit is 500 writes; EMI plans are well within that
+        val batch = db.batch()
+        instalments.forEach { data ->
+            val ref = transactionsCollection().document()
+            batch.set(ref, data)
+        }
+        batch.commit().await()
     }
 
     suspend fun updateTransaction(
@@ -206,6 +228,23 @@ class FirebaseRepository(
         transactionsCollection().document(transactionId).delete().await()
     }
 
+    suspend fun addPartialPayment(
+        transactionId: String,
+        amount: Double,
+        date: String
+    ) {
+        transactionsCollection()
+            .document(transactionId)
+            .set(
+                mapOf(
+                    "partialPaidAmount" to FieldValue.increment(amount),
+                    "lastPartialPaymentDate" to date
+                ),
+                SetOptions.merge()
+            )
+            .await()
+    }
+
     suspend fun addPayment(
         accountId: String,
         accountName: String,
@@ -227,25 +266,51 @@ class FirebaseRepository(
     fun listenAllData(onResult: (AppData) -> Unit) {
         val root = userRoot()
 
-        root.collection("customers").addSnapshotListener { cSnap, _ ->
-            val customers = cSnap?.documents.orEmpty()
+        var latestCustomers: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
+        var latestAccounts: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
+        var latestTransactions: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
+        var latestPayments: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
 
-            root.collection("accounts").addSnapshotListener { accSnap, _ ->
-                val accounts = accSnap?.documents.orEmpty()
+        var customersReady = false
+        var accountsReady = false
+        var transactionsReady = false
+        var paymentsReady = false
 
-                root.collection("transactions").addSnapshotListener { tSnap, _ ->
-                    root.collection("payments").addSnapshotListener { pSnap, _ ->
-                        onResult(
-                            buildAppData(
-                                customers = customers,
-                                accounts = accounts,
-                                transactions = tSnap?.documents.orEmpty(),
-                                payments = pSnap?.documents.orEmpty()
-                            )
-                        )
-                    }
-                }
+        fun notifyIfReady() {
+            if (customersReady && accountsReady && transactionsReady && paymentsReady) {
+                onResult(
+                    buildAppData(
+                        customers = latestCustomers,
+                        accounts = latestAccounts,
+                        transactions = latestTransactions,
+                        payments = latestPayments
+                    )
+                )
             }
+        }
+
+        root.collection("customers").addSnapshotListener { snap, _ ->
+            latestCustomers = snap?.documents.orEmpty()
+            customersReady = true
+            notifyIfReady()
+        }
+
+        root.collection("accounts").addSnapshotListener { snap, _ ->
+            latestAccounts = snap?.documents.orEmpty()
+            accountsReady = true
+            notifyIfReady()
+        }
+
+        root.collection("transactions").addSnapshotListener { snap, _ ->
+            latestTransactions = snap?.documents.orEmpty()
+            transactionsReady = true
+            notifyIfReady()
+        }
+
+        root.collection("payments").addSnapshotListener { snap, _ ->
+            latestPayments = snap?.documents.orEmpty()
+            paymentsReady = true
+            notifyIfReady()
         }
     }
 
@@ -307,7 +372,12 @@ class FirebaseRepository(
                             ?: ""
                         ),
                     "isSettled" to (document.getBoolean("isSettled") == true),
-                    "settledDate" to document.getString("settledDate").orEmpty()
+                    "settledDate" to document.getString("settledDate").orEmpty(),
+                    "dueDate" to document.getString("dueDate").orEmpty(),
+                    "partialPaidAmount" to (document.getDouble("partialPaidAmount") ?: 0.0),
+                    "emiGroupId" to document.getString("emiGroupId").orEmpty(),
+                    "emiIndex" to (document.getLong("emiIndex") ?: 0L),
+                    "emiTotal" to (document.getLong("emiTotal") ?: 0L)
                 )
             )
         }
@@ -336,7 +406,30 @@ class FirebaseRepository(
     }
 
     suspend fun restoreBackup(payload: FirestoreBackupPayload) {
-        val pendingWrites = buildList {
+        restoreBackupAsync(payload).forEach { task -> task.await() }
+    }
+
+    fun restoreBackupAsync(payload: FirestoreBackupPayload): List<Task<Void>> {
+        return buildPendingWrites(payload).chunked(MAX_BATCH_WRITE_COUNT).map { chunk ->
+            val batch = db.batch()
+            chunk.forEach { pendingWrite ->
+                batch.set(
+                    pendingWrite.reference,
+                    pendingWrite.fields,
+                    SetOptions.merge()
+                )
+            }
+            batch.commit()
+        }
+    }
+
+    private data class PendingWrite(
+        val reference: DocumentReference,
+        val fields: Map<String, Any?>
+    )
+
+    private fun buildPendingWrites(payload: FirestoreBackupPayload): List<PendingWrite> {
+        return buildList {
             payload.customers.forEach { record ->
                 add(
                     PendingWrite(
@@ -373,24 +466,7 @@ class FirebaseRepository(
                 )
             }
         }
-
-        pendingWrites.chunked(MAX_BATCH_WRITE_COUNT).forEach { chunk ->
-            val batch = db.batch()
-            chunk.forEach { pendingWrite ->
-                batch.set(
-                    pendingWrite.reference,
-                    pendingWrite.fields,
-                    SetOptions.merge()
-                )
-            }
-            batch.commit().await()
-        }
     }
-
-    private data class PendingWrite(
-        val reference: DocumentReference,
-        val fields: Map<String, Any?>
-    )
 
     private companion object {
         const val MAX_BATCH_WRITE_COUNT = 400
@@ -484,7 +560,15 @@ class FirebaseRepository(
                 }
 
                 val isDeleted = customerId in deletedCustomerIds
-                if (!isDeleted) {
+                val emiGroupId = transaction.getString("emiGroupId").orEmpty()
+                val transactionDateStr = transaction.getString("transactionDate")
+                    ?: transaction.getString("givenDate") ?: ""
+                val isFutureEmi = isFutureScheduledEmi(
+                    transactionDate = transactionDateStr,
+                    emiGroupId = emiGroupId
+                )
+
+                if (!isDeleted && !isFutureEmi) {
                     val accountTotal = accountTotals.getOrPut(accountId) {
                         RunningAccountTotal(
                             id = accountId,
@@ -496,16 +580,13 @@ class FirebaseRepository(
                 }
 
                 val targetCustomers = if (isDeleted) deletedCustomerTotals else customerTotals
-                val customerTotal = targetCustomers.getOrPut(customerId) {
-                    RunningCustomerTotal(
-                        id = customerId,
-                        name = customerName,
-                        isDeleted = isDeleted
-                    )
+                // Only attach to customers that actually exist — prevents phantom/duplicate entries
+                val customerTotal = targetCustomers[customerId] ?: return@forEach
+                if (!isFutureEmi) {
+                    customerTotal.totalAmount += amount
                 }
-                customerTotal.totalAmount += amount
                 val isSettled = transaction.getBoolean("isSettled") == true
-                if (isSettled) {
+                if (isSettled && !isFutureEmi) {
                     customerTotal.settledTransactionAmount += amount
                 }
 
@@ -524,7 +605,12 @@ class FirebaseRepository(
                             ?: transaction.getString("givenDate")
                             ?: "",
                         isSettled = isSettled,
-                        settledDate = transaction.getString("settledDate").orEmpty()
+                        settledDate = transaction.getString("settledDate").orEmpty(),
+                        partialPaidAmount = transaction.getDouble("partialPaidAmount") ?: 0.0,
+                        dueDate = transaction.getString("dueDate").orEmpty(),
+                        emiGroupId = transaction.getString("emiGroupId").orEmpty(),
+                        emiIndex = (transaction.getLong("emiIndex") ?: 0L).toInt(),
+                        emiTotal = (transaction.getLong("emiTotal") ?: 0L).toInt()
                     )
                 )
             }
@@ -580,7 +666,14 @@ class FirebaseRepository(
     }
 
     private fun RunningCustomerTotal.toSummary(): CustomerSummary {
-        val customerPaidAmount = manualPaidAmount + settledTransactionAmount
+        // totalAmount already excludes future EMIs (set in buildAppData)
+        val totalPartialPaid = transactions
+            .filter { t ->
+                if (!t.isEmi) return@filter true
+                !t.isScheduledForFutureMonth()
+            }
+            .sumOf { it.partialPaidAmount }
+        val customerPaidAmount = manualPaidAmount + settledTransactionAmount + totalPartialPaid
         return CustomerSummary(
             id = id,
             name = name,
@@ -588,6 +681,7 @@ class FirebaseRepository(
             creditDueAmount = customerPaidAmount,
             manualPaidAmount = manualPaidAmount,
             settledTransactionAmount = settledTransactionAmount,
+            partialPaidAmount = totalPartialPaid,
             balance = (totalAmount - customerPaidAmount).coerceAtLeast(0.0),
             transactions = transactions.sortedWith(
                 compareByDescending<CustomerTransaction> { it.transactionDate }
@@ -637,5 +731,15 @@ class FirebaseRepository(
 
     private fun legacyCustomerId(customerName: String): String {
         return "legacy_${customerName.trim().lowercase().hashCode()}"
+    }
+
+    private fun isFutureScheduledEmi(
+        transactionDate: String,
+        emiGroupId: String,
+        referenceDate: LocalDate = LocalDate.now()
+    ): Boolean {
+        if (emiGroupId.isBlank()) return false
+        val installmentDate = runCatching { LocalDate.parse(transactionDate) }.getOrNull() ?: return false
+        return YearMonth.from(installmentDate).isAfter(YearMonth.from(referenceDate))
     }
 }

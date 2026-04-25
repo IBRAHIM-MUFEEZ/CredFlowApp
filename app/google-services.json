@@ -1,34 +1,41 @@
-﻿{
+{
   "project_info": {
-    "project_number": "109696540700",
-    "firebase_url": "https://my-awesome-project-b08aa.firebaseio.com",
-    "project_id": "my-awesome-project-b08aa",
-    "storage_bucket": "my-awesome-project-b08aa.firebasestorage.app"
+    "project_number": "1036438568871",
+    "project_id": "radafiq-272f9",
+    "storage_bucket": "radafiq-272f9.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:109696540700:android:6e878e42db9dc37bd3bfd9",
+        "mobilesdk_app_id": "1:1036438568871:android:e1209715a26d73a659c082",
         "android_client_info": {
           "package_name": "com.radafiq"
         }
       },
       "oauth_client": [
         {
-          "client_id": "109696540700-412r4uhgitnia785d09srruqp0job3oo.apps.googleusercontent.com",
+          "client_id": "1036438568871-1eogd981o4d2502lefkb6el10jmpvqth.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.radafiq",
+            "certificate_hash": "25c4dd4176332e2a075e5e974959481d43931a63"
+          }
+        },
+        {
+          "client_id": "1036438568871-h04rt7h9gqqcmfiodi3liku0bjll1gm7.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBUPv6trHp3bceHJFqaxKh3G_q_BqK3bAI"
+          "current_key": "AIzaSyC95wyIN6jS-w_9GCRQZyOy_5G41pkUyOY"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "109696540700-412r4uhgitnia785d09srruqp0job3oo.apps.googleusercontent.com",
+              "client_id": "1036438568871-h04rt7h9gqqcmfiodi3liku0bjll1gm7.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

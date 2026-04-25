@@ -13,9 +13,47 @@ object LocalIdentityRepository {
 
     fun userId(context: Context = FirebaseApp.getInstance().applicationContext): String {
         cachedUserId?.let { return it }
-
         return synchronized(this) {
             cachedUserId ?: loadOrCreateUserId(context.applicationContext).also { cachedUserId = it }
+        }
+    }
+
+    /**
+     * Sets the identity to a stable ID derived from the Google account email.
+     * Call this immediately after a successful Google Sign-In, before saving the profile.
+     * If the email-based ID differs from the current one, the in-memory cache is updated
+     * and persisted so all subsequent Firestore operations use the correct path.
+     */
+    fun setIdentityFromEmail(
+        email: String,
+        context: Context = FirebaseApp.getInstance().applicationContext
+    ) {
+        if (email.isBlank()) return
+        val emailId = "google_${email.trim().lowercase()}"
+        synchronized(this) {
+            context.applicationContext
+                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_USER_ID, emailId)
+                .apply()
+            cachedUserId = emailId
+        }
+    }
+
+    /**
+     * Clears the persisted identity so the next login starts fresh.
+     * A new device UUID is generated and stored — it will be replaced by
+     * setIdentityFromEmail() as soon as the user signs in with Google.
+     */
+    fun resetIdentity(context: Context = FirebaseApp.getInstance().applicationContext) {
+        synchronized(this) {
+            val newId = "device_${UUID.randomUUID()}"
+            context.applicationContext
+                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_USER_ID, newId)
+                .apply()
+            cachedUserId = newId
         }
     }
 
@@ -25,7 +63,6 @@ object LocalIdentityRepository {
         if (!existingUserId.isNullOrBlank()) {
             return existingUserId
         }
-
         val generatedUserId = "device_${UUID.randomUUID()}"
         preferences.edit()
             .putString(KEY_USER_ID, generatedUserId)

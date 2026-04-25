@@ -1,4 +1,4 @@
-﻿package com.radafiq.data.backup
+package com.radafiq.data.backup
 
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
@@ -13,10 +13,13 @@ class DriveBackupRepository {
         return runCatching {
             val existingFileId = findBackupFileId(accessToken)
             val boundary = "Radafiq-boundary"
+            // "parents" must only be set on POST (create), not on PATCH (update)
             val metadata = JSONObject().apply {
                 put("name", BACKUP_FILE_NAME)
-                put("parents", JSONArray().put("appDataFolder"))
                 put("mimeType", BACKUP_MIME_TYPE)
+                if (existingFileId.isNullOrBlank()) {
+                    put("parents", JSONArray().put("appDataFolder"))
+                }
             }
 
             val requestBody = buildString {
@@ -71,27 +74,40 @@ class DriveBackupRepository {
     private fun findBackupFileId(accessToken: String): String? {
         val query = URLEncoder.encode("name='$BACKUP_FILE_NAME' and trashed=false", "UTF-8")
         val url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q=$query"
-        val connection = openConnection(
-            url = url,
-            accessToken = accessToken,
-            method = "GET"
-        )
+        val connection = openConnection(url = url, accessToken = accessToken, method = "GET")
 
         ensureSuccess(connection)
         val response = connection.inputStream.bufferedReader().use(BufferedReader::readText)
         val files = JSONObject(response).optJSONArray("files") ?: JSONArray()
         if (files.length() == 0) return null
 
+        // Find the latest file
         var latestId: String? = null
         var latestModified = ""
+        val allIds = mutableListOf<String>()
         for (index in 0 until files.length()) {
             val file = files.getJSONObject(index)
+            val id = file.optString("id")
             val modifiedTime = file.optString("modifiedTime")
+            allIds.add(id)
             if (latestId == null || modifiedTime > latestModified) {
-                latestId = file.optString("id")
+                latestId = id
                 latestModified = modifiedTime
             }
         }
+
+        // Delete any duplicate files (keep only the latest)
+        allIds.filter { it != latestId }.forEach { duplicateId ->
+            runCatching {
+                val deleteConn = openConnection(
+                    url = "https://www.googleapis.com/drive/v3/files/$duplicateId",
+                    accessToken = accessToken,
+                    method = "DELETE"
+                )
+                deleteConn.responseCode // trigger the request
+            }
+        }
+
         return latestId
     }
 
@@ -103,6 +119,8 @@ class DriveBackupRepository {
     ): HttpURLConnection {
         return (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
+            connectTimeout = 20_000   // 20s to establish connection
+            readTimeout    = 30_000   // 30s to read response
             setRequestProperty("Authorization", "Bearer $accessToken")
             setRequestProperty("Accept", "application/json")
             if (contentType != null) {

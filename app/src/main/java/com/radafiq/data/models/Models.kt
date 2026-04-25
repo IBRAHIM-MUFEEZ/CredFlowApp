@@ -1,5 +1,8 @@
 package com.radafiq.data.models
 
+import java.time.LocalDate
+import java.time.YearMonth
+
 enum class AccountKind(
     val storageValue: String,
     val label: String
@@ -125,6 +128,7 @@ data class CustomerSummary(
     val creditDueAmount: Double,
     val manualPaidAmount: Double,
     val settledTransactionAmount: Double,
+    val partialPaidAmount: Double,
     val balance: Double,
     val transactions: List<CustomerTransaction>,
     val isDeleted: Boolean = false
@@ -140,8 +144,34 @@ data class CustomerTransaction(
     val amount: Double,
     val transactionDate: String,
     val isSettled: Boolean = false,
-    val settledDate: String = ""
-)
+    val settledDate: String = "",
+    val partialPaidAmount: Double = 0.0,
+    val dueDate: String = "",
+    // EMI fields
+    val emiGroupId: String = "",
+    val emiIndex: Int = 0,
+    val emiTotal: Int = 0
+) {
+    val isEmi: Boolean get() = emiGroupId.isNotBlank()
+
+    private fun installmentDate(): LocalDate? {
+        return runCatching { LocalDate.parse(transactionDate) }.getOrNull()
+    }
+
+    fun isScheduledForFutureMonth(referenceDate: LocalDate = LocalDate.now()): Boolean {
+        if (!isEmi) return false
+        val installmentDate = installmentDate() ?: return false
+        return YearMonth.from(installmentDate).isAfter(YearMonth.from(referenceDate))
+    }
+
+    fun isVisibleInTransactions(referenceDate: LocalDate = LocalDate.now()): Boolean {
+        return !isScheduledForFutureMonth(referenceDate)
+    }
+
+    val isDueToday: Boolean get() {
+        return isVisibleInTransactions()
+    }
+}
 
 data class AppData(
     val accounts: List<CardSummary>,

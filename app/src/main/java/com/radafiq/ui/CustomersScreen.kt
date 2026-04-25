@@ -1,6 +1,12 @@
 package com.radafiq.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,10 +30,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -44,8 +52,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,17 +102,31 @@ fun CustomersScreen(
     selectedAccountIds: Set<String>,
     vm: MainViewModel = viewModel(),
     modifier: Modifier = Modifier,
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenCustomer: (String) -> Unit = {}
 ) {
     val customers by vm.customers.collectAsState()
     val deletedCustomers by vm.deletedCustomers.collectAsState()
+    val syncStatus by vm.syncStatus.collectAsState()
     var viewMode by remember { mutableStateOf(CustomerViewMode.ACTIVE) }
-    var expandedCustomerId by rememberSaveable(viewMode) { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
     val allVisibleCustomers = if (viewMode == CustomerViewMode.ACTIVE) customers else deletedCustomers
     val visibleCustomers = if (searchQuery.isBlank()) allVisibleCustomers
     else allVisibleCustomers.filter { it.name.contains(searchQuery, ignoreCase = true) }
+
+    // Rotating animation for sync icon
+    val infiniteTransition = rememberInfiniteTransition(label = "sync-rotate")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "sync-angle"
+    )
+    val isSyncing = syncStatus.state == MainViewModel.SyncState.SYNCING
 
     LazyColumn(
         modifier = modifier
@@ -117,7 +144,37 @@ fun CustomersScreen(
                     "Restore customers or remove old records forever."
                 },
                 trailing = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Sync status message
+                        if (syncStatus.message.isNotBlank()) {
+                            Text(
+                                text = syncStatus.message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = when (syncStatus.state) {
+                                    MainViewModel.SyncState.SUCCESS -> MaterialTheme.colorScheme.secondary
+                                    MainViewModel.SyncState.ERROR -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 2,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                        }
+                        // Sync button with rotate animation
+                        IconButton(onClick = { vm.triggerSync() }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Sync to Drive",
+                                tint = when (syncStatus.state) {
+                                    MainViewModel.SyncState.SUCCESS -> MaterialTheme.colorScheme.secondary
+                                    MainViewModel.SyncState.ERROR -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.primary
+                                },
+                                modifier = if (isSyncing) Modifier.rotate(rotation) else Modifier
+                            )
+                        }
                         TextButton(
                             onClick = {
                                 viewMode = if (viewMode == CustomerViewMode.ACTIVE) {
@@ -175,18 +232,9 @@ fun CustomersScreen(
         } else {
             items(visibleCustomers, key = { it.id }) { customer ->
                 if (viewMode == CustomerViewMode.ACTIVE) {
-                    CustomerCard(
+                    CustomerListRow(
                         customer = customer,
-                        vm = vm,
-                        selectedAccountIds = selectedAccountIds,
-                        isExpanded = expandedCustomerId == customer.id,
-                        onToggleExpanded = {
-                            expandedCustomerId = if (expandedCustomerId == customer.id) {
-                                null
-                            } else {
-                                customer.id
-                            }
-                        }
+                        onClick = { onOpenCustomer(customer.id) }
                     )
                 } else {
                     DeletedCustomerCard(
@@ -310,7 +358,11 @@ fun CustomerCard(
                                         )
                                     }
                                 ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete Customer")
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = "Delete Customer",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
                                 }
                                 Icon(
                                     imageVector = Icons.Filled.KeyboardArrowUp,
@@ -351,7 +403,7 @@ fun CustomerCard(
                     )
 
                     Text(
-                        text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled transactions ${formatMoney(customer.settledTransactionAmount)}",
+                        text = "Manual paid ${formatMoney(customer.manualPaidAmount)} • Settled ${formatMoney(customer.settledTransactionAmount)} • Partial ${formatMoney(customer.partialPaidAmount)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 10.dp)
@@ -381,15 +433,23 @@ fun CustomerCard(
                         .padding(top = 10.dp, bottom = 8.dp)
                 )
 
-                if (filteredTransactions.isEmpty()) {
+                val today = java.time.LocalDate.now()
+
+                // Transactions section: non-EMI always shown + EMI instalments once their month starts.
+                val dueTransactions = filteredTransactions.filter { t ->
+                    t.isVisibleInTransactions(today)
+                }
+
+                if (dueTransactions.isEmpty()) {
                     EmptyInlineState("No transactions for this selection.")
                 } else {
-                    filteredTransactions.forEach { transaction ->
+                    dueTransactions.forEach { transaction ->
                         TransactionRow(
                             transaction = transaction,
                             onEdit = { transactionToEdit = transaction },
                             onDelete = { vm.deleteTransaction(transaction.id) },
-                            onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) }
+                            onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) },
+                            onPartialPayment = { amount -> vm.addPartialPayment(transaction.id, amount) }
                         )
                     }
                 }
@@ -456,6 +516,21 @@ fun CustomerCard(
                     transactionDate = transactionDate
                 )
                 showAddTransaction = false
+            },
+            onSaveEmi = { transactionName, accountId, accountName, months, totalAmount, transactionDate, firstMonthOverride, dateOverrides ->
+                vm.addEmiTransactions(
+                    customerId = customer.id,
+                    transactionName = transactionName,
+                    customerName = customer.name,
+                    accountId = accountId,
+                    accountName = accountName,
+                    totalAmount = totalAmount,
+                    transactionDate = transactionDate,
+                    months = months,
+                    firstMonthOverride = firstMonthOverride,
+                    dateOverrides = dateOverrides
+                )
+                showAddTransaction = false
             }
         )
     }
@@ -481,6 +556,290 @@ fun CustomerCard(
         )
     }
 
+}
+
+// ── Simple list row — tapping opens the detail screen ────────────────────────
+@Composable
+fun CustomerListRow(
+    customer: CustomerSummary,
+    onClick: () -> Unit
+) {
+    FlowCard(
+        accentColor = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(42.dp)
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(21.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = initialsFor(customer.name),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Column(modifier = Modifier.padding(start = 12.dp)) {
+                    Text(
+                        text = customer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${customer.transactions.filter { it.isVisibleInTransactions() }.size} transaction(s)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatMoney(customer.balance),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (customer.balance > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (customer.balance > 0.0) "Due" else "Settled",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+// ── Full-screen customer detail ───────────────────────────────────────────────
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun CustomerDetailScreen(
+    customerId: String,
+    selectedAccountIds: Set<String>,
+    vm: MainViewModel = viewModel(),
+    onBack: () -> Unit
+) {
+    val customers by vm.customers.collectAsState()
+    val customer = customers.find { it.id == customerId }
+
+    if (customer == null) {
+        // Customer was deleted — navigate back, show background while waiting
+        LaunchedEffect(Unit) { onBack() }
+        RadafiqBackground { Box(modifier = Modifier.fillMaxSize()) }
+        return
+    }
+
+    var showAddTransaction by remember { mutableStateOf(false) }
+    var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
+    var transactionFilter by remember { mutableStateOf(TransactionTypeFilter.ALL) }
+    val today = remember { LocalDate.now() }
+
+    val filteredTransactions = remember(customer.transactions, transactionFilter) {
+        customer.transactions.filter { t ->
+            t.isVisibleInTransactions(today) && when (transactionFilter) {
+                TransactionTypeFilter.ALL -> true
+                TransactionTypeFilter.BANK_ACCOUNT -> t.accountKind == AccountKind.BANK_ACCOUNT
+                TransactionTypeFilter.CREDIT_CARD -> t.accountKind == AccountKind.CREDIT_CARD
+            }
+        }
+    }
+
+    RadafiqBackground {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = customer.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Balance: ${formatMoney(customer.balance)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (customer.balance > 0.0) warningColor()
+                                        else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Back"
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showAddTransaction = true }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Transaction")
+                        }
+                        IconButton(onClick = {
+                            vm.deleteCustomer(customerId = customer.id, customerName = customer.name)
+                            // onBack() is handled automatically when customer disappears from the list
+                        }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Delete Customer",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    )
+                )
+            }
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Summary strip
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricPill(
+                            label = "Used",
+                            value = formatMoney(customer.totalAmount),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricPill(
+                            label = "Paid",
+                            value = formatMoney(customer.creditDueAmount),
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricPill(
+                            label = "Balance",
+                            value = formatMoney(customer.balance),
+                            color = if (customer.balance > 0.0) warningColor()
+                                    else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Filter dropdown
+                item {
+                    TransactionTypeDropdown(
+                        selectedFilter = transactionFilter,
+                        onFilterSelected = { transactionFilter = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (filteredTransactions.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            EmptyState(
+                                title = "No transactions",
+                                subtitle = "Tap + to add the first transaction for ${customer.name}."
+                            )
+                        }
+                    }
+                } else {
+                    items(filteredTransactions, key = { it.id }) { transaction ->
+                        TransactionRow(
+                            transaction = transaction,
+                            onEdit = { transactionToEdit = transaction },
+                            onDelete = { vm.deleteTransaction(transaction.id) },
+                            onSettledChange = { vm.toggleTransactionSettled(transaction.id, it) },
+                            onPartialPayment = { amount -> vm.addPartialPayment(transaction.id, amount) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddTransaction) {
+        TransactionEditorDialog(
+            customer = customer,
+            selectedAccountIds = selectedAccountIds,
+            transaction = null,
+            onDismiss = { showAddTransaction = false },
+            onSave = { transactionName, accountId, accountName, accountKind, amount, transactionDate ->
+                vm.addTransaction(
+                    customerId = customer.id,
+                    transactionName = transactionName,
+                    customerName = customer.name,
+                    accountId = accountId,
+                    accountName = accountName,
+                    accountKind = accountKind,
+                    amount = amount,
+                    transactionDate = transactionDate
+                )
+                showAddTransaction = false
+            },
+            onSaveEmi = { transactionName, accountId, accountName, months, totalAmount, transactionDate, firstMonthOverride, dateOverrides ->
+                vm.addEmiTransactions(
+                    customerId = customer.id,
+                    transactionName = transactionName,
+                    customerName = customer.name,
+                    accountId = accountId,
+                    accountName = accountName,
+                    totalAmount = totalAmount,
+                    transactionDate = transactionDate,
+                    months = months,
+                    firstMonthOverride = firstMonthOverride,
+                    dateOverrides = dateOverrides
+                )
+                showAddTransaction = false
+            }
+        )
+    }
+
+    transactionToEdit?.let { transaction ->
+        TransactionEditorDialog(
+            customer = customer,
+            selectedAccountIds = selectedAccountIds,
+            transaction = transaction,
+            onDismiss = { transactionToEdit = null },
+            onSave = { transactionName, accountId, accountName, accountKind, amount, transactionDate ->
+                vm.updateTransaction(
+                    transactionId = transaction.id,
+                    transactionName = transactionName,
+                    accountId = accountId,
+                    accountName = accountName,
+                    accountKind = accountKind,
+                    amount = amount,
+                    transactionDate = transactionDate
+                )
+                transactionToEdit = null
+            }
+        )
+    }
 }
 
 private fun initialsFor(name: String): String {
@@ -616,10 +975,13 @@ fun TransactionRow(
     transaction: CustomerTransaction,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onSettledChange: (Boolean) -> Unit
+    onSettledChange: (Boolean) -> Unit,
+    onPartialPayment: (String) -> Unit = {}
 ) {
     val lineThrough = if (transaction.isSettled) TextDecoration.LineThrough else TextDecoration.None
     val contentAlpha = if (transaction.isSettled) 0.56f else 1f
+    var showPartialPaymentDialog by remember { mutableStateOf(false) }
+    val remaining = (transaction.amount - transaction.partialPaidAmount).coerceAtLeast(0.0)
 
     Column(
         modifier = Modifier
@@ -647,7 +1009,7 @@ fun TransactionRow(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${transaction.accountName} • ${transaction.transactionDate}",
+                        text = "${transaction.accountName} • ${transaction.transactionDate}${if (transaction.dueDate.isNotBlank()) " • Due ${transaction.dueDate}" else ""}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                         modifier = Modifier.padding(top = 4.dp),
@@ -675,27 +1037,135 @@ fun TransactionRow(
                             onCheckedChange = { checked -> onSettledChange(checked) }
                         )
                         IconButton(onClick = onEdit) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit Transaction")
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Edit Transaction",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                         IconButton(onClick = onDelete) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete Transaction")
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Delete Transaction",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }
             }
         )
 
-        Text(
-            text = if (transaction.isSettled) {
-                "Paid and cleared${transaction.settledDate.takeIf { it.isNotBlank() }?.let { " on $it" }.orEmpty()}"
-            } else {
-                "Pending collection"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (transaction.isSettled) MaterialTheme.colorScheme.primary else warningColor(),
-            modifier = Modifier.padding(top = 8.dp)
+        if (transaction.partialPaidAmount > 0.0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Partial paid: ${formatMoney(transaction.partialPaidAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "Remaining: ${formatMoney(remaining)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (remaining > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (transaction.isSettled) {
+                    "Paid and cleared${transaction.settledDate.takeIf { it.isNotBlank() }?.let { " on $it" }.orEmpty()}"
+                } else {
+                    "Pending collection"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (transaction.isSettled) MaterialTheme.colorScheme.primary else warningColor()
+            )
+            if (!transaction.isSettled) {
+                TextButton(
+                    onClick = { showPartialPaymentDialog = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = "+ Partial Pay",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
+    }
+
+    if (showPartialPaymentDialog) {
+        PartialPaymentDialog(
+            transaction = transaction,
+            onDismiss = { showPartialPaymentDialog = false },
+            onSave = { amount ->
+                onPartialPayment(amount)
+                showPartialPaymentDialog = false
+            }
         )
     }
+}
+
+@Composable
+private fun PartialPaymentDialog(
+    transaction: CustomerTransaction,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var amount by remember { mutableStateOf("") }
+    val remaining = (transaction.amount - transaction.partialPaidAmount).coerceAtLeast(0.0)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Partial Payment") },
+        text = {
+            Column {
+                Text(
+                    text = "Transaction: ${transaction.name}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Total: ${formatMoney(transaction.amount)} • Remaining: ${formatMoney(remaining)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Payment Amount") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    leadingIcon = { Text("₹") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(amount) },
+                enabled = amount.toDoubleOrNull()?.let { it > 0.0 && it <= remaining } == true
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
@@ -765,7 +1235,17 @@ fun TransactionEditorDialog(
         accountKind: AccountKind,
         amount: String,
         transactionDate: String
-    ) -> Unit
+    ) -> Unit,
+    onSaveEmi: ((
+        transactionName: String,
+        accountId: String,
+        accountName: String,
+        months: Int,
+        totalAmount: Double,
+        transactionDate: String,
+        firstMonthOverride: Double?,
+        dateOverrides: Map<Int, String>
+    ) -> Unit)? = null
 ) {
     val availableKinds = remember(selectedAccountIds, transaction?.accountKind) {
         selectedAccountKinds(selectedAccountIds, transaction?.accountKind)
@@ -777,15 +1257,11 @@ fun TransactionEditorDialog(
             else -> AccountKind.CREDIT_CARD
         }
     }
-    var transactionName by remember(transaction?.id) {
-        mutableStateOf(transaction?.name.orEmpty())
-    }
+    var transactionName by remember(transaction?.id) { mutableStateOf(transaction?.name.orEmpty()) }
     var selectedKind by remember(transaction?.id, availableKinds) {
         mutableStateOf(transaction?.accountKind ?: defaultKind)
     }
-    var selectedAccountId by remember(transaction?.id) {
-        mutableStateOf(transaction?.accountId.orEmpty())
-    }
+    var selectedAccountId by remember(transaction?.id) { mutableStateOf(transaction?.accountId.orEmpty()) }
     var amountExpression by remember(transaction?.id) {
         mutableStateOf(transaction?.amount?.takeIf { it > 0.0 }?.toString().orEmpty())
     }
@@ -796,9 +1272,21 @@ fun TransactionEditorDialog(
         )
     }
 
-    val calculatedAmount = remember(amountExpression) {
-        evaluateAmountExpression(amountExpression)
-    }
+    // EMI state — only for new credit card transactions
+    var emiEnabled by remember { mutableStateOf(false) }
+    var emiMonths by remember { mutableStateOf("") }
+    var emiFirstMonthOverride by remember { mutableStateOf("") }
+    var emiManualDates by remember { mutableStateOf(false) }
+    // Manual date overrides per EMI index (0-based)
+    var emiDateOverrides by remember { mutableStateOf(mapOf<Int, String>()) }
+
+    val isNewCreditCard = transaction == null && selectedKind == AccountKind.CREDIT_CARD
+    val calculatedAmount = remember(amountExpression) { evaluateAmountExpression(amountExpression) }
+    val emiMonthsInt = emiMonths.toIntOrNull()?.takeIf { it in 2..120 }
+    val baseEmi = if (calculatedAmount != null && emiMonthsInt != null) calculatedAmount / emiMonthsInt else null
+    val firstOverride = emiFirstMonthOverride.toDoubleOrNull()
+        ?.takeIf { it > 0.0 }
+
     val accountOptions = remember(selectedKind, selectedAccountIds, transaction?.accountId) {
         selectedAccountOptions(
             accountKind = selectedKind,
@@ -810,15 +1298,13 @@ fun TransactionEditorDialog(
         ?: accountOptions.firstOrNull()
 
     LaunchedEffect(availableKinds) {
-        if (selectedKind !in availableKinds && availableKinds.isNotEmpty()) {
-            selectedKind = defaultKind
-        }
+        if (selectedKind !in availableKinds && availableKinds.isNotEmpty()) selectedKind = defaultKind
     }
-
     LaunchedEffect(selectedKind, accountOptions) {
         if (accountOptions.isNotEmpty() && selectedAccountId !in accountOptions.map { it.id }) {
             selectedAccountId = accountOptions.first().id
         }
+        if (selectedKind != AccountKind.CREDIT_CARD) emiEnabled = false
     }
 
     AlertDialog(
@@ -850,20 +1336,42 @@ fun TransactionEditorDialog(
                     onValueChange = { transactionName = it },
                     label = { Text("Transaction Name") },
                     singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                 )
 
+                var showDatePicker by remember { mutableStateOf(false) }
+
                 OutlinedTextField(
-                    value = transactionDate,
-                    onValueChange = { transactionDate = it },
-                    label = { Text("Transaction Date (YYYY-MM-DD)") },
+                    value = formatDisplayDate(transactionDate),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Transaction Date") },
+                    placeholder = { Text("dd/mm/yyyy") },
+                    trailingIcon = {
+                        androidx.compose.material3.IconButton(onClick = { showDatePicker = true }) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.DateRange,
+                                contentDescription = "Pick date"
+                            )
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
+                        .clickable { showDatePicker = true }
                 )
+
+                if (showDatePicker) {
+                    DatePickerDialog(
+                        initialDateIso = transactionDate,
+                        onDateSelected = { iso ->
+                            transactionDate = iso
+                            showDatePicker = false
+                        },
+                        onDismiss = { showDatePicker = false }
+                    )
+                }
 
                 if (availableKinds.isEmpty() || selectedAccount == null) {
                     Text(
@@ -877,9 +1385,7 @@ fun TransactionEditorDialog(
                         options = availableKinds,
                         selectedKind = selectedKind,
                         onKindSelected = { selectedKind = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
                     AccountOptionDropdown(
@@ -887,9 +1393,7 @@ fun TransactionEditorDialog(
                         selectedOption = selectedAccount,
                         options = accountOptions,
                         onOptionSelected = { selectedAccountId = it.id },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
                 }
 
@@ -927,11 +1431,8 @@ fun TransactionEditorDialog(
                 }
 
                 Text(
-                    text = if (calculatedAmount != null) {
-                        "= ${formatMoney(calculatedAmount)}"
-                    } else {
-                        "Enter an amount or arithmetic expression"
-                    },
+                    text = if (calculatedAmount != null) "= ${formatMoney(calculatedAmount)}"
+                    else "Enter an amount or arithmetic expression",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
@@ -942,6 +1443,160 @@ fun TransactionEditorDialog(
                     onExpressionChange = { amountExpression = it },
                     calculatedAmount = calculatedAmount
                 )
+
+                // ── EMI section (credit card + new transaction only) ──
+                if (isNewCreditCard && onSaveEmi != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "Split into EMIs",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Credit card only",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = emiEnabled, onCheckedChange = { emiEnabled = it })
+                    }
+
+                    if (emiEnabled) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = emiMonths,
+                            onValueChange = {
+                                emiMonths = it.filter { c -> c.isDigit() }
+                                emiDateOverrides = mapOf() // reset overrides when months change
+                            },
+                            label = { Text("Number of Months") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (baseEmi != null) {
+                            Text(
+                                text = "Each EMI: ${formatMoney(baseEmi)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = emiFirstMonthOverride,
+                                onValueChange = { emiFirstMonthOverride = it },
+                                label = { Text("First Month Amount (optional)") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                placeholder = { Text(formatMoney(baseEmi)) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (firstOverride != null) {
+                                Text(
+                                    text = "Month 1: ${formatMoney(firstOverride)} • Months 2–$emiMonthsInt: ${formatMoney(baseEmi)} each (unchanged)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Auto vs Manual date toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Set dates manually",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (emiManualDates) "Pick each EMI date" else "Auto: same date every month",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = emiManualDates,
+                                    onCheckedChange = {
+                                        emiManualDates = it
+                                        emiDateOverrides = mapOf()
+                                    }
+                                )
+                            }
+
+                            // Per-EMI date pickers when manual
+                            if (emiManualDates && emiMonthsInt != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val baseDate = runCatching {
+                                    java.time.LocalDate.parse(transactionDate)
+                                }.getOrDefault(java.time.LocalDate.now())
+
+                                var showEmiDatePickerIndex by remember { mutableStateOf<Int?>(null) }
+
+                                repeat(emiMonthsInt) { i ->
+                                    val autoDate = baseDate.plusMonths(i.toLong()).toString()
+                                    val displayDate = emiDateOverrides[i] ?: autoDate
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "EMI ${i + 1}/$emiMonthsInt",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.width(72.dp)
+                                        )
+                                        OutlinedTextField(
+                                            value = formatDisplayDate(displayDate),
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            singleLine = true,
+                                            trailingIcon = {
+                                                androidx.compose.material3.IconButton(
+                                                    onClick = { showEmiDatePickerIndex = i }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.DateRange,
+                                                        contentDescription = "Pick date"
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable { showEmiDatePickerIndex = i }
+                                        )
+                                    }
+
+                                    if (showEmiDatePickerIndex == i) {
+                                        DatePickerDialog(
+                                            initialDateIso = displayDate,
+                                            onDateSelected = { iso ->
+                                                emiDateOverrides = emiDateOverrides + (i to iso)
+                                                showEmiDatePickerIndex = null
+                                            },
+                                            onDismiss = { showEmiDatePickerIndex = null }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -949,27 +1604,39 @@ fun TransactionEditorDialog(
                 onClick = {
                     val amount = calculatedAmount ?: return@TextButton
                     val activeAccount = selectedAccount ?: return@TextButton
-                    onSave(
-                        transactionName,
-                        activeAccount.id,
-                        activeAccount.name,
-                        selectedKind,
-                        amount.toString(),
-                        transactionDate
-                    )
+                    if (emiEnabled && emiMonthsInt != null && onSaveEmi != null) {
+                        onSaveEmi(
+                            transactionName,
+                            activeAccount.id,
+                            activeAccount.name,
+                            emiMonthsInt,
+                            amount,
+                            transactionDate,
+                            firstOverride,
+                            if (emiManualDates) emiDateOverrides else mapOf()
+                        )
+                    } else {
+                        onSave(
+                            transactionName,
+                            activeAccount.id,
+                            activeAccount.name,
+                            selectedKind,
+                            amount.toString(),
+                            transactionDate
+                        )
+                    }
                 },
                 enabled = transactionName.isNotBlank() &&
                     calculatedAmount != null &&
                     selectedAccount != null &&
-                    transactionDate.isNotBlank()
+                    transactionDate.isNotBlank() &&
+                    (!emiEnabled || emiMonthsInt != null)
             ) {
                 Text("Save")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }
@@ -1107,6 +1774,52 @@ private fun trimAmount(value: Double): String {
         value.toLong().toString()
     } else {
         value.toString()
+    }
+}
+
+private fun formatMonthYear(isoDate: String): String {
+    return runCatching {
+        java.time.LocalDate.parse(isoDate).format(java.time.format.DateTimeFormatter.ofPattern("MMM yyyy"))
+    }.getOrDefault(isoDate)
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerDialog(
+    initialDateIso: String,
+    onDateSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialMillis = remember(initialDateIso) {
+        runCatching {
+            java.time.LocalDate.parse(initialDateIso)
+                .atStartOfDay(java.time.ZoneOffset.UTC)
+                .toInstant().toEpochMilli()
+        }.getOrDefault(System.currentTimeMillis())
+    }
+    val state = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = initialMillis
+    )
+
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                val millis = state.selectedDateMillis
+                if (millis != null) {
+                    val iso = java.time.Instant.ofEpochMilli(millis)
+                        .atZone(java.time.ZoneOffset.UTC)
+                        .toLocalDate()
+                        .toString()
+                    onDateSelected(iso)
+                } else onDismiss()
+            }) { Text("OK") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    ) {
+        androidx.compose.material3.DatePicker(state = state)
     }
 }
 

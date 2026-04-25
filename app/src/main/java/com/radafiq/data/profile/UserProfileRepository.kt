@@ -1,6 +1,7 @@
 package com.radafiq.data.profile
 
 import com.radafiq.data.auth.LocalIdentityRepository
+import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -15,6 +16,7 @@ data class UserProfile(
     val displayName: String = "",
     val businessName: String = "",
     val email: String = "",
+    val photoUrl: String = "",
     val isProfileComplete: Boolean = false
 )
 
@@ -45,6 +47,7 @@ class UserProfileRepository(
                     displayName = snapshot.getString("displayName").orEmpty(),
                     businessName = snapshot.getString("businessName").orEmpty(),
                     email = snapshot.getString("email").orEmpty(),
+                    photoUrl = snapshot.getString("photoUrl").orEmpty(),
                     isProfileComplete = snapshot.getBoolean("isProfileComplete") == true
                 )
             }
@@ -56,10 +59,18 @@ class UserProfileRepository(
         }
     }
 
+    suspend fun signOut() {
+        // Identity reset is handled by LocalIdentityRepository.resetIdentity() in MainActivity.
+        // Stop the current Firestore listener so we don't receive stale data after logout.
+        registration?.remove()
+        registration = null
+        _state.value = UserProfileState(isLoading = true)
+    }
     suspend fun saveProfile(
         displayName: String,
         businessName: String,
-        email: String
+        email: String,
+        photoUrl: String = ""
     ) {
         val userId = LocalIdentityRepository.userId()
         profileDocument(userId)
@@ -70,6 +81,7 @@ class UserProfileRepository(
                     "displayName" to displayName.trim(),
                     "businessName" to businessName.trim(),
                     "email" to email.trim(),
+                    "photoUrl" to photoUrl.trim(),
                     "isProfileComplete" to true
                 ),
                 SetOptions.merge()
@@ -84,14 +96,17 @@ class UserProfileRepository(
     }
 
     suspend fun restoreProfileMap(data: Map<String, Any>) {
+        restoreProfileMapAsync(data).await()
+    }
+
+    fun restoreProfileMapAsync(data: Map<String, Any>): Task<Void> {
         val sanitizedData = data
             .filterKeys { it != "phoneNumber" }
             .toMutableMap<String, Any>()
         sanitizedData["phoneNumber"] = FieldValue.delete()
 
-        profileDocument(LocalIdentityRepository.userId())
+        return profileDocument(LocalIdentityRepository.userId())
             .set(sanitizedData, SetOptions.merge())
-            .await()
     }
 
     private fun profileDocument(uid: String) = db.collection("users")

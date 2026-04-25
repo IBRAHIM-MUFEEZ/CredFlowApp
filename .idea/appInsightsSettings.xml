@@ -9,9 +9,9 @@
               <option name="connection">
                 <ConnectionSetting>
                   <option name="appId" value="com.radafiq" />
-                  <option name="mobileSdkAppId" value="1:109696540700:android:6e878e42db9dc37bd3bfd9" />
-                  <option name="projectId" value="my-awesome-project-b08aa" />
-                  <option name="projectNumber" value="109696540700" />
+                  <option name="mobileSdkAppId" value="1:1036438568871:android:e1209715a26d73a659c082" />
+                  <option name="projectId" value="radafiq-272f9" />
+                  <option name="projectNumber" value="1036438568871" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

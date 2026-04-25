@@ -1,6 +1,7 @@
 package com.radafiq.data.settings
 
 import android.content.Context
+import com.radafiq.data.auth.LocalIdentityRepository
 import com.radafiq.data.models.IndianAccountCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,9 @@ enum class AppThemeMode(
 
 data class AppSettingsState(
     val themeMode: AppThemeMode = AppThemeMode.DARK,
-    val selectedAccountIds: Set<String> = IndianAccountCatalog.defaultSelectedAccountIds()
+    val selectedAccountIds: Set<String> = IndianAccountCatalog.defaultSelectedAccountIds(),
+    val lastDriveBackupTime: String? = null,
+    val lastDriveRestoreTime: String? = null
 )
 
 class AppSettingsRepository(context: Context) {
@@ -32,6 +35,11 @@ class AppSettingsRepository(context: Context) {
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<AppSettingsState> = _settings.asStateFlow()
+
+    /** Call after a user switch so timestamps reload for the new account. */
+    fun reloadForCurrentUser() {
+        _settings.value = loadSettings()
+    }
 
     fun setThemeMode(themeMode: AppThemeMode) {
         persist(_settings.value.copy(themeMode = themeMode))
@@ -56,8 +64,16 @@ class AppSettingsRepository(context: Context) {
         )
     }
 
+    fun setLastDriveBackupTime(timestamp: String?) {
+        persist(_settings.value.copy(lastDriveBackupTime = timestamp))
+    }
+
+    fun setLastDriveRestoreTime(timestamp: String?) {
+        persist(_settings.value.copy(lastDriveRestoreTime = timestamp))
+    }
+
     fun exportSettings(): Map<String, Any> {
-        return mapOf(
+        return mutableMapOf<String, Any>(
             KEY_THEME_MODE to _settings.value.themeMode.name,
             KEY_SELECTED_ACCOUNT_IDS to _settings.value.selectedAccountIds.toList()
         )
@@ -78,9 +94,18 @@ class AppSettingsRepository(context: Context) {
                     IndianAccountCatalog.defaultSelectedAccountIds()
                 } else {
                     IndianAccountCatalog.sanitizeSelectedAccountIds(selectedAccountIds)
-                }
+                },
+                lastDriveBackupTime = data[KEY_LAST_DRIVE_BACKUP_TIME] as? String
+                    ?: _settings.value.lastDriveBackupTime,
+                lastDriveRestoreTime = data[KEY_LAST_DRIVE_RESTORE_TIME] as? String
+                    ?: _settings.value.lastDriveRestoreTime
             )
         )
+    }
+
+    private fun userSuffix(): String {
+        // Append userId so each account gets its own timestamp keys
+        return "_${LocalIdentityRepository.userId()}"
     }
 
     private fun loadSettings(): AppSettingsState {
@@ -90,6 +115,7 @@ class AppSettingsRepository(context: Context) {
         val storedAccountIds = preferences.getStringSet(KEY_SELECTED_ACCOUNT_IDS, null)
             ?.toSet()
             .orEmpty()
+        val suffix = userSuffix()
 
         return AppSettingsState(
             themeMode = storedThemeMode,
@@ -97,15 +123,21 @@ class AppSettingsRepository(context: Context) {
                 IndianAccountCatalog.defaultSelectedAccountIds()
             } else {
                 IndianAccountCatalog.sanitizeSelectedAccountIds(storedAccountIds)
-            }
+            },
+            lastDriveBackupTime = preferences.getString(KEY_LAST_DRIVE_BACKUP_TIME + suffix, null),
+            lastDriveRestoreTime = preferences.getString(KEY_LAST_DRIVE_RESTORE_TIME + suffix, null)
         )
     }
 
     private fun persist(settings: AppSettingsState) {
-        preferences.edit()
-            .putString(KEY_THEME_MODE, settings.themeMode.name)
-            .putStringSet(KEY_SELECTED_ACCOUNT_IDS, settings.selectedAccountIds.toSet())
-            .apply()
+        val suffix = userSuffix()
+        preferences.edit().apply {
+            putString(KEY_THEME_MODE, settings.themeMode.name)
+            putStringSet(KEY_SELECTED_ACCOUNT_IDS, settings.selectedAccountIds.toSet())
+            putString(KEY_LAST_DRIVE_BACKUP_TIME + suffix, settings.lastDriveBackupTime)
+            putString(KEY_LAST_DRIVE_RESTORE_TIME + suffix, settings.lastDriveRestoreTime)
+            apply()
+        }
         _settings.value = settings
     }
 
@@ -113,5 +145,7 @@ class AppSettingsRepository(context: Context) {
         const val PREFERENCES_NAME = "radafiq_settings"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_SELECTED_ACCOUNT_IDS = "selected_account_ids"
+        const val KEY_LAST_DRIVE_BACKUP_TIME = "last_drive_backup_time"
+        const val KEY_LAST_DRIVE_RESTORE_TIME = "last_drive_restore_time"
     }
 }

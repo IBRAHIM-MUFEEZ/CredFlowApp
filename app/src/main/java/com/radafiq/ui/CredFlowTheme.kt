@@ -622,6 +622,22 @@ fun formatMoney(value: Double): String {
     return "₹${String.format("%.2f", value)}"
 }
 
+fun formatDisplayDate(isoDate: String): String {
+    return try {
+        val d = java.time.LocalDate.parse(isoDate)
+        "%02d/%02d/%04d".format(d.dayOfMonth, d.monthValue, d.year)
+    } catch (_: Exception) { isoDate }
+}
+
+fun parseDisplayDate(display: String): String {
+    return try {
+        val parts = display.split("/")
+        if (parts.size == 3) {
+            java.time.LocalDate.of(parts[2].toInt(), parts[1].toInt(), parts[0].toInt()).toString()
+        } else display
+    } catch (_: Exception) { display }
+}
+
 fun accountAccent(accountKind: com.radafiq.data.models.AccountKind): Color {
     return when (accountKind) {
         com.radafiq.data.models.AccountKind.BANK_ACCOUNT -> RadafiqPurple

@@ -1,19 +1,32 @@
 package com.radafiq.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.radafiq.data.auth.GoogleSignInHelper
+import com.radafiq.data.backup.BackupJsonSerializer
+import com.radafiq.data.backup.DriveBackupRepository
 import com.radafiq.data.models.AccountKind
+import com.radafiq.data.models.AppData
 import com.radafiq.data.models.CardSummary
 import com.radafiq.data.models.CustomerSummary
+import com.radafiq.data.models.FirestoreBackupPayload
+import com.radafiq.data.profile.UserProfileRepository
 import com.radafiq.data.repository.FirebaseRepository
+import com.radafiq.data.security.AppSecurityRepository
+import com.radafiq.data.settings.AppSettingsRepository
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MainViewModel(
-    private val repository: FirebaseRepository = FirebaseRepository()
+    private var repository: FirebaseRepository = FirebaseRepository()
 ) : ViewModel() {
 
     private val _cards = MutableStateFlow<List<CardSummary>>(emptyList())
@@ -25,60 +38,282 @@ class MainViewModel(
     private val _deletedCustomers = MutableStateFlow<List<CustomerSummary>>(emptyList())
     val deletedCustomers: StateFlow<List<CustomerSummary>> = _deletedCustomers.asStateFlow()
 
+    private val _driveOperationMessage = MutableStateFlow<String?>(null)
+    val driveOperationMessage: StateFlow<String?> = _driveOperationMessage.asStateFlow()
+
+    // Sync status for the customers tab sync button
+    enum class SyncState { IDLE, SYNCING, SUCCESS, ERROR }
+    data class SyncStatus(val state: SyncState = SyncState.IDLE, val message: String = "")
+    private val _syncStatus = MutableStateFlow(SyncStatus())
+    val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+    private var syncStatusResetJob: Job? = null
+
+    private var autoBackupJob: Job? = null
+    private var appContext: Context? = null
+    private var profileRepository: UserProfileRepository? = null
+    private var settingsRepository: AppSettingsRepository? = null
+    private var securityRepository: AppSecurityRepository? = null
+    private val driveBackupRepository = DriveBackupRepository()
+    private var activeDriveOperationCount = 0
+    private var hasObservedInitialSnapshot = false
+    // Snapshots to skip after restore (our own writes echo back as Firestore snapshots)
+    private var snapshotsToSkip = 0
+
+    // Call once from MainActivity to enable auto-backup
+    fun initAutoBackup(
+        context: Context,
+        profileRepo: UserProfileRepository,
+        settingsRepo: AppSettingsRepository,
+        securityRepo: AppSecurityRepository
+    ) {
+        if (appContext == null) appContext = context.applicationContext
+        profileRepository = profileRepo
+        settingsRepository = settingsRepo
+        securityRepository = securityRepo
+    }
+
     init {
-        repository.listenAllData { appData ->
-            _cards.value = appData.accounts
-            _customers.value = appData.customers
-            _deletedCustomers.value = appData.deletedCustomers
+        // Grab application context immediately from Firebase so appContext is never null
+        appContext = runCatching {
+            com.google.firebase.FirebaseApp.getInstance().applicationContext
+        }.getOrNull()
+        startListening()
+    }
+
+    private fun startListening() {
+        repository.listenAllData(::handleObservedAppData)
+    }
+
+    /**
+     * Called after logout + identity reset, or after Google Sign-In switches the identity.
+     * Replaces the repository so ALL reads AND writes use the new Firestore path.
+     */
+    fun reinitialize() {
+        autoBackupJob?.cancel()
+        activeDriveOperationCount = 0
+        hasObservedInitialSnapshot = false
+        snapshotsToSkip = 0
+        _cards.value = emptyList()
+        _customers.value = emptyList()
+        _deletedCustomers.value = emptyList()
+        _driveOperationMessage.value = null
+        // Replace repository so writes (addTransaction, addCustomer, etc.) also use the new path
+        repository = FirebaseRepository()
+        repository.listenAllData(::handleObservedAppData)
+    }
+
+    /** Call before a restore so the echoed Firestore snapshots don't trigger auto-backup. */
+    fun suppressNextBackups(count: Int = 3) {
+        snapshotsToSkip = count
+    }
+
+    private fun handleObservedAppData(appData: AppData) {
+        _cards.value = appData.accounts
+        _customers.value = appData.customers
+        _deletedCustomers.value = appData.deletedCustomers
+
+        // Skip the very first snapshot (initial load — not a user change)
+        if (!hasObservedInitialSnapshot) {
+            hasObservedInitialSnapshot = true
+            return
         }
+
+        // Skip snapshots echoed back from our own restore writes
+        if (snapshotsToSkip > 0) {
+            snapshotsToSkip--
+            return
+        }
+
+        // Every subsequent snapshot is a real data change — schedule backup
+        scheduleAutoBackup()
+    }
+
+    private fun scheduleAutoBackup() {
+        val context = appContext ?: return
+        autoBackupJob?.cancel()
+        autoBackupJob = viewModelScope.launch {
+            delay(3_000L) // debounce — wait 3s after last change
+            performAutoBackup(context)
+        }
+    }
+
+    private suspend fun performAutoBackup(context: Context) {
+        if (activeDriveOperationCount > 0) return
+        val account = GoogleSignInHelper.getLastSignedInAccount(context) ?: return
+        // Show syncing state in the customers tab
+        _syncStatus.value = SyncStatus(SyncState.SYNCING, "Syncing...")
+        syncStatusResetJob?.cancel()
+        try {
+            val token = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                GoogleSignInHelper.fetchAccessToken(context, account)
+            }
+            val payload = repository.exportBackup(
+                profile = profileRepository?.exportProfileMap() ?: emptyMap(),
+                settings = mapOf(
+                    "app" to (settingsRepository?.exportSettings() ?: emptyMap()),
+                    "security" to (securityRepository?.exportSettings() ?: emptyMap())
+                )
+            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val json = BackupJsonSerializer.toJson(payload)
+                driveBackupRepository.uploadBackup(token, json).getOrThrow()
+            }
+            settingsRepository?.setLastDriveBackupTime(currentTimestampLabel())
+            setSyncResult(SyncState.SUCCESS, "Synced successfully.")
+            android.util.Log.d("AutoBackup", "Auto-backup succeeded")
+        } catch (e: java.net.UnknownHostException) {
+            setSyncResult(SyncState.ERROR, "No internet connection.")
+        } catch (e: java.net.SocketTimeoutException) {
+            setSyncResult(SyncState.ERROR, "Connection timed out.")
+        } catch (e: Exception) {
+            val msg = e.localizedMessage?.take(60) ?: "Sync failed."
+            setSyncResult(SyncState.ERROR, msg)
+            android.util.Log.w("AutoBackup", "Auto-backup failed: ${e.localizedMessage}", e)
+        }
+    }
+
+    fun beginDriveOperation(message: String) {
+        activeDriveOperationCount += 1
+        _driveOperationMessage.value = message
+    }
+
+    fun updateDriveOperationMessage(message: String) {
+        if (activeDriveOperationCount > 0) {
+            _driveOperationMessage.value = message
+        }
+    }
+
+    fun finishDriveOperation() {
+        activeDriveOperationCount = (activeDriveOperationCount - 1).coerceAtLeast(0)
+        if (activeDriveOperationCount == 0) {
+            _driveOperationMessage.value = null
+        }
+    }
+
+    fun recordDriveBackupCompleted() {
+        settingsRepository?.setLastDriveBackupTime(currentTimestampLabel())
+    }
+
+    fun recordDriveRestoreCompleted() {
+        settingsRepository?.setLastDriveRestoreTime(currentTimestampLabel())
+    }
+
+    /** Manual sync triggered from the customers tab sync button. */
+    fun triggerSync() {
+        val context = appContext ?: run {
+            _syncStatus.value = SyncStatus(SyncState.ERROR, "App not ready. Try again.")
+            return
+        }
+        if (_syncStatus.value.state == SyncState.SYNCING) return
+        viewModelScope.launch {
+            _syncStatus.value = SyncStatus(SyncState.SYNCING, "Syncing...")
+            syncStatusResetJob?.cancel()
+            val account = GoogleSignInHelper.getLastSignedInAccount(context)
+            if (account == null) {
+                setSyncResult(SyncState.ERROR, "Not signed in to Google.")
+                return@launch
+            }
+            try {
+                // Fetch token on IO (network call)
+                val token = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    GoogleSignInHelper.fetchAccessToken(context, account)
+                }
+                // Export from Firestore (uses await() internally — fine on any dispatcher)
+                val payload = repository.exportBackup(
+                    profile = profileRepository?.exportProfileMap() ?: emptyMap(),
+                    settings = mapOf(
+                        "app" to (settingsRepository?.exportSettings() ?: emptyMap()),
+                        "security" to (securityRepository?.exportSettings() ?: emptyMap())
+                    )
+                )
+                // Upload to Drive on IO (HttpURLConnection — must be off main thread)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val json = BackupJsonSerializer.toJson(payload)
+                    driveBackupRepository.uploadBackup(token, json).getOrThrow()
+                }
+                settingsRepository?.setLastDriveBackupTime(currentTimestampLabel())
+                setSyncResult(SyncState.SUCCESS, "Synced successfully.")
+            } catch (e: java.net.UnknownHostException) {
+                setSyncResult(SyncState.ERROR, "No internet connection.")
+            } catch (e: java.net.SocketTimeoutException) {
+                setSyncResult(SyncState.ERROR, "Connection timed out.")
+            } catch (e: Exception) {
+                val msg = e.localizedMessage?.take(60) ?: "Sync failed."
+                setSyncResult(SyncState.ERROR, msg)
+            }
+        }
+    }
+
+    private fun setSyncResult(state: SyncState, message: String) {
+        _syncStatus.value = SyncStatus(state, message)
+        syncStatusResetJob?.cancel()
+        syncStatusResetJob = viewModelScope.launch {
+            delay(4_000L) // show message for 4 seconds then clear
+            _syncStatus.value = SyncStatus(SyncState.IDLE, "")
+        }
+    }
+
+    /** Full restore from a JSON string — awaits all writes. Suppresses echo backups. */
+    suspend fun restoreFromJson(
+        json: String,
+        profileRepo: UserProfileRepository,
+        settingsRepo: AppSettingsRepository,
+        securityRepo: AppSecurityRepository
+    ) {
+        val payload = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.radafiq.data.backup.BackupJsonSerializer.fromJson(json)
+        }
+        suppressNextBackups(3)
+        repository.restoreBackup(payload)
+        val profileMap = payload.profile.filterValues { it != null }.mapValues { it.value as Any }
+        profileRepo.restoreProfileMapAsync(profileMap)
+        settingsRepo.restoreSettings(
+            (payload.settings["app"] as? Map<*, *>)?.entries
+                ?.associate { it.key.toString() to it.value }.orEmpty()
+        )
+        securityRepo.restoreSettings(
+            (payload.settings["security"] as? Map<*, *>)?.entries
+                ?.associate { it.key.toString() to it.value }.orEmpty()
+        )
+        recordDriveRestoreCompleted()
+    }
+    suspend fun exportBackup(
+        profile: Map<String, Any?>,
+        settings: Map<String, Any?>
+    ) = repository.exportBackup(profile = profile, settings = settings)
+
+    /** Restore backup using the ViewModel's own repository — awaits all Firestore writes. */
+    suspend fun restoreBackup(payload: FirestoreBackupPayload) =
+        repository.restoreBackup(payload)
+
+    private fun currentTimestampLabel(): String {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))
     }
 
     fun addCustomer(name: String) {
         val trimmedName = name.trim()
         if (trimmedName.isBlank()) return
-
-        viewModelScope.launch {
-            repository.addCustomer(trimmedName)
-        }
+        viewModelScope.launch { repository.addCustomer(trimmedName) }
     }
 
-    fun deleteCustomer(
-        customerId: String,
-        customerName: String
-    ) {
+    fun deleteCustomer(customerId: String, customerName: String) {
         viewModelScope.launch {
-            repository.deleteCustomer(
-                customerId = customerId,
-                customerName = customerName
-            )
+            repository.deleteCustomer(customerId = customerId, customerName = customerName)
         }
     }
 
     fun restoreCustomer(customerId: String) {
+        viewModelScope.launch { repository.restoreCustomer(customerId) }
+    }
+
+    fun permanentlyDeleteCustomer(customerId: String, customerName: String) {
         viewModelScope.launch {
-            repository.restoreCustomer(customerId)
+            repository.permanentlyDeleteCustomer(customerId = customerId, customerName = customerName)
         }
     }
 
-    fun permanentlyDeleteCustomer(
-        customerId: String,
-        customerName: String
-    ) {
-        viewModelScope.launch {
-            repository.permanentlyDeleteCustomer(
-                customerId = customerId,
-                customerName = customerName
-            )
-        }
-    }
-
-    fun updateCustomerDueAmount(
-        customerId: String,
-        customerName: String,
-        amount: String
-    ) {
+    fun updateCustomerDueAmount(customerId: String, customerName: String, amount: String) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
-
         viewModelScope.launch {
             repository.updateCustomerDueAmount(
                 customerId = customerId,
@@ -98,7 +333,6 @@ class MainViewModel(
         reminderWhatsApp: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
-
         viewModelScope.launch {
             repository.updateCreditCardDue(
                 accountId = accountId,
@@ -123,7 +357,6 @@ class MainViewModel(
         transactionDate: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
-
         viewModelScope.launch {
             repository.addTransaction(
                 customerId = customerId,
@@ -138,6 +371,50 @@ class MainViewModel(
         }
     }
 
+    fun addEmiTransactions(
+        customerId: String,
+        transactionName: String,
+        customerName: String,
+        accountId: String,
+        accountName: String,
+        totalAmount: Double,
+        transactionDate: String,
+        months: Int,
+        firstMonthOverride: Double?,
+        dateOverrides: Map<Int, String> = mapOf()
+    ) {
+        if (months <= 0 || totalAmount <= 0.0) return
+        val baseDate = runCatching { LocalDate.parse(transactionDate) }.getOrDefault(LocalDate.now())
+        val baseEmi = totalAmount / months
+        val firstEmi = firstMonthOverride?.takeIf { it > 0.0 } ?: baseEmi
+        val groupId = java.util.UUID.randomUUID().toString()
+        viewModelScope.launch {
+            val instalments = (0 until months).map { i ->
+                val emiAmount = if (i == 0) firstEmi else baseEmi
+                val emiDate = dateOverrides[i]?.let {
+                    runCatching { LocalDate.parse(it) }.getOrNull()
+                } ?: baseDate.plusMonths(i.toLong())
+                val dueDate = emiDate.plusMonths(1)
+                mutableMapOf<String, Any>(
+                    "customerId" to customerId,
+                    "transactionName" to "${transactionName.trim()} — EMI ${i + 1}/$months",
+                    "accountId" to accountId,
+                    "accountName" to accountName,
+                    "accountType" to AccountKind.CREDIT_CARD.storageValue,
+                    "customerName" to customerName.trim(),
+                    "amount" to emiAmount,
+                    "transactionDate" to emiDate.toString(),
+                    "givenDate" to emiDate.toString(),
+                    "dueDate" to dueDate.toString(),
+                    "emiGroupId" to groupId,
+                    "emiIndex" to i,
+                    "emiTotal" to months
+                )
+            }
+            repository.addEmiTransactionsBatch(instalments = instalments)
+        }
+    }
+
     fun updateTransaction(
         transactionId: String,
         transactionName: String,
@@ -148,7 +425,6 @@ class MainViewModel(
         transactionDate: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
-
         viewModelScope.launch {
             repository.updateTransaction(
                 transactionId = transactionId,
@@ -163,15 +439,22 @@ class MainViewModel(
     }
 
     fun deleteTransaction(transactionId: String) {
+        viewModelScope.launch { repository.deleteTransaction(transactionId) }
+    }
+
+    fun addPartialPayment(transactionId: String, amount: String) {
+        val parsedAmount = amount.toDoubleOrNull() ?: return
+        if (parsedAmount <= 0.0) return
         viewModelScope.launch {
-            repository.deleteTransaction(transactionId)
+            repository.addPartialPayment(
+                transactionId = transactionId,
+                amount = parsedAmount,
+                date = LocalDate.now().toString()
+            )
         }
     }
 
-    fun toggleTransactionSettled(
-        transactionId: String,
-        isSettled: Boolean
-    ) {
+    fun toggleTransactionSettled(transactionId: String, isSettled: Boolean) {
         viewModelScope.launch {
             repository.toggleTransactionSettled(
                 transactionId = transactionId,
@@ -181,14 +464,8 @@ class MainViewModel(
         }
     }
 
-    fun addPayment(
-        accountId: String,
-        accountName: String,
-        accountKind: AccountKind,
-        amount: String
-    ) {
+    fun addPayment(accountId: String, accountName: String, accountKind: AccountKind, amount: String) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
-
         viewModelScope.launch {
             repository.addPayment(
                 accountId = accountId,
