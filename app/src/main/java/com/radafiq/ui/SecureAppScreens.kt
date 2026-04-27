@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.radafiq.data.profile.UserProfile
 
@@ -100,37 +101,80 @@ fun ProfileSetupScreen(
 
             // Google Sign-In card
             if (onSignInWithGoogle != null) {
-                FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
-                    Text(
-                        text = if (loginRestoreInProgress) "Restoring your data..." else "Sign in with Google",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (loginRestoreInProgress) {
-                            "Fetching your latest backup from Google Drive. This may take a moment."
-                        } else {
-                            "One tap to sign in, connect Google Drive, and restore your latest backup automatically."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    if (loginRestoreInProgress) {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                        )
-                    } else {
-                        Button(
-                            onClick = onSignInWithGoogle,
-                            enabled = !googleSignInInProgress,
+                val isSignedIn = !profile?.email.isNullOrBlank()
+                FlowCard(
+                    accentColor = if (isSignedIn) MaterialTheme.colorScheme.secondary
+                                  else MaterialTheme.colorScheme.primary
+                ) {
+                    if (isSignedIn) {
+                        // Already signed in — show account info
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (googleSignInInProgress) "Signing in..." else "Continue with Google")
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "✓",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Signed in with Google",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    text = profile?.email.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        // Not signed in — show sign-in prompt
+                        Text(
+                            text = if (loginRestoreInProgress) "Restoring your data..." else "Sign in with Google",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (loginRestoreInProgress) {
+                                "Fetching your latest backup from Google Drive. This may take a moment."
+                            } else {
+                                "One tap to sign in, connect Google Drive, and restore your latest backup automatically."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (loginRestoreInProgress) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                            )
+                        } else {
+                            Button(
+                                onClick = onSignInWithGoogle,
+                                enabled = !googleSignInInProgress,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (googleSignInInProgress) "Signing in..." else "Continue with Google")
+                            }
                         }
                     }
                 }

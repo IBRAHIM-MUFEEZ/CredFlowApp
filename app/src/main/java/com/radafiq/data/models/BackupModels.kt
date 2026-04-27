@@ -13,5 +13,6 @@ data class FirestoreBackupPayload(
     val customers: List<BackupRecord> = emptyList(),
     val accounts: List<BackupRecord> = emptyList(),
     val transactions: List<BackupRecord> = emptyList(),
-    val payments: List<BackupRecord> = emptyList()
+    val payments: List<BackupRecord> = emptyList(),
+    val savings: List<BackupRecord> = emptyList()
 )

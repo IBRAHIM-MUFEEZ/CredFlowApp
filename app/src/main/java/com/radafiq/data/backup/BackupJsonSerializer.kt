@@ -16,10 +16,15 @@ object BackupJsonSerializer {
             put("accounts", recordsToJson(payload.accounts))
             put("transactions", recordsToJson(payload.transactions))
             put("payments", recordsToJson(payload.payments))
+            put("savings", recordsToJson(payload.savings))
         }.toString()
     }
 
     fun fromJson(json: String): FirestoreBackupPayload {
+        // Guard against maliciously large backup files (max 50MB)
+        if (json.length > 50 * 1024 * 1024) {
+            error("Backup file is too large to restore safely.")
+        }
         val root = JSONObject(json)
         return FirestoreBackupPayload(
             version = root.optInt("version", 1),
@@ -29,7 +34,8 @@ object BackupJsonSerializer {
             customers = jsonToRecords(root.optJSONArray("customers")),
             accounts = jsonToRecords(root.optJSONArray("accounts")),
             transactions = jsonToRecords(root.optJSONArray("transactions")),
-            payments = jsonToRecords(root.optJSONArray("payments"))
+            payments = jsonToRecords(root.optJSONArray("payments")),
+            savings = jsonToRecords(root.optJSONArray("savings"))
         )
     }
 

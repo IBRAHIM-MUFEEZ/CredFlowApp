@@ -135,7 +135,9 @@ class DriveBackupRepository {
         if (responseCode !in 200..299) {
             val errorBody = connection.errorStream?.bufferedReader()?.use(BufferedReader::readText)
                 ?: "Request failed with HTTP $responseCode"
-            error(errorBody)
+            // Strip any potential token leakage from error messages
+            val safeError = errorBody.take(200).replace(Regex("Bearer [A-Za-z0-9._\\-]+"), "Bearer [REDACTED]")
+            error("HTTP $responseCode: $safeError")
         }
     }
 

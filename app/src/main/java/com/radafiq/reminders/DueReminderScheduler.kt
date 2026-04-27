@@ -35,6 +35,7 @@ class DueReminderScheduler(
 
             val workName = workName(accountId, reminderDate)
             val inputData = Data.Builder()
+                .putString(DueReminderWorker.KEY_ACCOUNT_ID, accountId)
                 .putString(DueReminderWorker.KEY_ACCOUNT_NAME, accountName)
                 .putString(DueReminderWorker.KEY_DUE_DATE, parsedDueDate.toString())
                 .putInt(

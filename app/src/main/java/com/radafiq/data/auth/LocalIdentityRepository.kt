@@ -1,7 +1,9 @@
 package com.radafiq.data.auth
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
 
 object LocalIdentityRepository {
@@ -11,7 +13,38 @@ object LocalIdentityRepository {
     @Volatile
     private var cachedUserId: String? = null
 
+    private fun securePreferences(context: Context): SharedPreferences {
+        return context.applicationContext.getSharedPreferences(
+            PREFERENCES_NAME,
+            Context.MODE_PRIVATE
+        )
+    }
+
+    /**
+     * Returns the current userId.
+     * Priority: Firebase Auth UID → cached local ID → generate device UUID.
+     *
+     * Firebase Auth UID is used when the user is signed in with Google via Firebase Auth.
+     * This is the preferred path — it enables proper Firestore security rules.
+     */
     fun userId(context: Context = FirebaseApp.getInstance().applicationContext): String {
+        // 1. Firebase Auth UID — most secure, use if available
+        val firebaseUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (!firebaseUid.isNullOrBlank()) {
+            // Keep local cache in sync so Firestore listeners use the right path
+            if (cachedUserId != firebaseUid) {
+                synchronized(this) {
+                    securePreferences(context.applicationContext)
+                        .edit()
+                        .putString(KEY_USER_ID, firebaseUid)
+                        .apply()
+                    cachedUserId = firebaseUid
+                }
+            }
+            return firebaseUid
+        }
+
+        // 2. Cached local ID (device UUID or legacy google_ email ID)
         cachedUserId?.let { return it }
         return synchronized(this) {
             cachedUserId ?: loadOrCreateUserId(context.applicationContext).also { cachedUserId = it }
@@ -19,20 +52,42 @@ object LocalIdentityRepository {
     }
 
     /**
-     * Sets the identity to a stable ID derived from the Google account email.
-     * Call this immediately after a successful Google Sign-In, before saving the profile.
-     * If the email-based ID differs from the current one, the in-memory cache is updated
-     * and persisted so all subsequent Firestore operations use the correct path.
+     * Called after Firebase Auth sign-in succeeds.
+     * Stores the Firebase UID as the canonical identity.
+     * Also migrates legacy google_ email IDs to the real Firebase UID.
+     */
+    fun setIdentityFromFirebaseUid(
+        uid: String,
+        context: Context = FirebaseApp.getInstance().applicationContext
+    ) {
+        if (uid.isBlank()) return
+        synchronized(this) {
+            securePreferences(context.applicationContext)
+                .edit()
+                .putString(KEY_USER_ID, uid)
+                .apply()
+            cachedUserId = uid
+        }
+    }
+
+    /**
+     * Legacy: kept for backward compatibility during migration.
+     * New code should use setIdentityFromFirebaseUid instead.
      */
     fun setIdentityFromEmail(
         email: String,
         context: Context = FirebaseApp.getInstance().applicationContext
     ) {
         if (email.isBlank()) return
+        // Only use email-based ID if Firebase Auth is not available
+        val firebaseUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (!firebaseUid.isNullOrBlank()) {
+            setIdentityFromFirebaseUid(firebaseUid, context)
+            return
+        }
         val emailId = "google_${email.trim().lowercase()}"
         synchronized(this) {
-            context.applicationContext
-                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            securePreferences(context.applicationContext)
                 .edit()
                 .putString(KEY_USER_ID, emailId)
                 .apply()
@@ -41,15 +96,14 @@ object LocalIdentityRepository {
     }
 
     /**
-     * Clears the persisted identity so the next login starts fresh.
-     * A new device UUID is generated and stored — it will be replaced by
-     * setIdentityFromEmail() as soon as the user signs in with Google.
+     * Clears the persisted identity and signs out of Firebase Auth.
+     * Called on logout.
      */
     fun resetIdentity(context: Context = FirebaseApp.getInstance().applicationContext) {
         synchronized(this) {
+            FirebaseAuth.getInstance().signOut()
             val newId = "device_${UUID.randomUUID()}"
-            context.applicationContext
-                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            securePreferences(context.applicationContext)
                 .edit()
                 .putString(KEY_USER_ID, newId)
                 .apply()
@@ -58,7 +112,7 @@ object LocalIdentityRepository {
     }
 
     private fun loadOrCreateUserId(context: Context): String {
-        val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val preferences = securePreferences(context)
         val existingUserId = preferences.getString(KEY_USER_ID, null)
         if (!existingUserId.isNullOrBlank()) {
             return existingUserId

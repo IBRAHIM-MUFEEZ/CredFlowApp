@@ -44,11 +44,13 @@ import com.radafiq.data.profile.UserProfileRepository
 import com.radafiq.data.security.AppSecurityRepository
 import com.radafiq.data.settings.AppSettingsRepository
 import com.radafiq.security.BiometricAuthManager
+import com.radafiq.ui.AccountDetailScreen
 import com.radafiq.ui.AddPaymentScreen
 import com.radafiq.ui.AddTransactionScreen
 import com.radafiq.ui.AppLockScreen
 import com.radafiq.ui.ChangePasscodeScreen
 import com.radafiq.ui.CustomerDetailScreen
+import com.radafiq.ui.CustomerSavingsScreen
 import com.radafiq.ui.RadafiqBackground
 import com.radafiq.ui.RadafiqTheme
 import com.radafiq.ui.DashboardScreen
@@ -133,13 +135,27 @@ class MainActivity : FragmentActivity() {
                 val email = account.email.orEmpty()
                 val photo = account.photoUrl?.toString().orEmpty()
                 if (email.isNotBlank()) {
-                    LocalIdentityRepository.setIdentityFromEmail(email, applicationContext)
-                    settingsRepository.reloadForCurrentUser()
-                    mainViewModel.reinitialize()
-                    coroutineScope.launch { profileRepository.observeCurrentUserProfile() }
-                    // Immediately restore from Drive — single sign-in covers both identity + Drive
                     loginRestoreInProgress = true
                     coroutineScope.launch {
+                        // 1. Sign into Firebase Auth — get real UID
+                        val firebaseUid = GoogleSignInHelper.signInToFirebase(account)
+                        if (firebaseUid != null) {
+                            LocalIdentityRepository.setIdentityFromFirebaseUid(firebaseUid, applicationContext)
+                        } else {
+                            // Fallback: Firebase Auth unavailable, use email-based ID
+                            LocalIdentityRepository.setIdentityFromEmail(email, applicationContext)
+                        }
+
+                        // 2. Reinitialize data layer with new identity
+                        settingsRepository.reloadForCurrentUser()
+                        mainViewModel.reinitialize()
+                        profileRepository.observeCurrentUserProfile()
+
+                        // 3. Save profile (callback runs after identity is set)
+                        pendingProfileCallback?.invoke(name, "", email, photo)
+                        pendingProfileCallback = null
+
+                        // 4. Restore from Drive
                         runCatching {
                             val token = GoogleSignInHelper.fetchAccessToken(applicationContext, account)
                             val json = withContext(Dispatchers.IO) {
@@ -152,13 +168,19 @@ class MainActivity : FragmentActivity() {
                                 securityRepo = securityRepository
                             )
                         }
-                        // Errors (no backup on Drive, network failure) silently ignored — first login
+                        // Errors silently ignored — first login, no backup yet is fine
                         loginRestoreInProgress = false
                     }
+                } else {
+                    pendingProfileCallback = null
                 }
-                pendingProfileCallback?.invoke(name, "", email, photo)
-            } catch (_: ApiException) {}
-            pendingProfileCallback = null
+            } catch (e: ApiException) {
+                profileGoogleSignInInProgress = false
+                loginRestoreInProgress = false
+                pendingProfileCallback = null
+                android.util.Log.w("SignIn", "Google Sign-In failed: code ${e.statusCode}")
+                driveStatusMessage = "Sign-in failed (code ${e.statusCode}). Please try again."
+            }
         }
         val biometricAvailable = remember { biometricAuthManager.canAuthenticate(this@MainActivity) }
         val lockedAccountIds = remember(cards) {
@@ -577,6 +599,9 @@ class MainActivity : FragmentActivity() {
                                 vm = mainViewModel,
                                 onOpenCustomer = { customerId ->
                                     navController.navigate("customerDetail/$customerId")
+                                },
+                                onOpenAccount = { accountId ->
+                                    navController.navigate("accountDetail/$accountId")
                                 }
                             )
                         }
@@ -600,6 +625,25 @@ class MainActivity : FragmentActivity() {
                             CustomerDetailScreen(
                                 customerId = customerId,
                                 selectedAccountIds = settingsState.selectedAccountIds,
+                                vm = mainViewModel,
+                                onBack = { navController.popBackStack() },
+                                onOpenSavings = { id -> navController.navigate("customerSavings/$id") }
+                            )
+                        }
+
+                        composable("customerSavings/{customerId}") { backStackEntry ->
+                            val customerId = backStackEntry.arguments?.getString("customerId").orEmpty()
+                            CustomerSavingsScreen(
+                                customerId = customerId,
+                                vm = mainViewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+
+                        composable("accountDetail/{accountId}") { backStackEntry ->
+                            val accountId = backStackEntry.arguments?.getString("accountId").orEmpty()
+                            AccountDetailScreen(
+                                accountId = accountId,
                                 vm = mainViewModel,
                                 onBack = { navController.popBackStack() }
                             )

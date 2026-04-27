@@ -21,6 +21,7 @@ class DueReminderWorker(
     override suspend fun doWork(): Result {
         createChannel()
 
+        val accountId = inputData.getString(KEY_ACCOUNT_ID).orEmpty()
         val accountName = inputData.getString(KEY_ACCOUNT_NAME).orEmpty()
         val dueDate = inputData.getString(KEY_DUE_DATE).orEmpty()
         val daysLeft = inputData.getInt(KEY_DAYS_LEFT, 0)
@@ -36,9 +37,15 @@ class DueReminderWorker(
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        
+        // Use accountId (stable UUID) instead of accountName to avoid collisions
+        val notificationId = (accountId + dueDate + daysLeft).hashCode().let {
+            if (it == Int.MIN_VALUE) Int.MAX_VALUE else Math.abs(it)
+        }
+        
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
-            (accountName + dueDate + daysLeft).hashCode(),
+            notificationId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -54,7 +61,7 @@ class DueReminderWorker(
             .build()
 
         NotificationManagerCompat.from(applicationContext)
-            .notify((accountName + dueDate + daysLeft).hashCode(), notification)
+            .notify(notificationId, notification)
 
         return Result.success()
     }
@@ -76,6 +83,7 @@ class DueReminderWorker(
 
     companion object {
         const val CHANNEL_ID = "Radafiq_due_reminders"
+        const val KEY_ACCOUNT_ID = "account_id"
         const val KEY_ACCOUNT_NAME = "account_name"
         const val KEY_DUE_DATE = "due_date"
         const val KEY_DAYS_LEFT = "days_left"

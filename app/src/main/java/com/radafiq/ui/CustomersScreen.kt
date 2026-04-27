@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,6 +66,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -619,6 +622,14 @@ fun CustomerListRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (customer.savingsBalance > 0.0) {
+                    Text(
+                        text = "Savings ${formatMoney(customer.savingsBalance)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
         }
     }
@@ -631,7 +642,8 @@ fun CustomerDetailScreen(
     customerId: String,
     selectedAccountIds: Set<String>,
     vm: MainViewModel = viewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenSavings: (String) -> Unit = {}
 ) {
     val customers by vm.customers.collectAsState()
     val customer = customers.find { it.id == customerId }
@@ -646,6 +658,7 @@ fun CustomerDetailScreen(
     var showAddTransaction by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
     var transactionFilter by remember { mutableStateOf(TransactionTypeFilter.ALL) }
+    var showShareDialog by remember { mutableStateOf(false) }
     val today = remember { LocalDate.now() }
 
     val filteredTransactions = remember(customer.transactions, transactionFilter) {
@@ -689,12 +702,24 @@ fun CustomerDetailScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { onOpenSavings(customer.id) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Savings,
+                                contentDescription = "Savings",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(onClick = { showShareDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = "Share Statement"
+                            )
+                        }
                         IconButton(onClick = { showAddTransaction = true }) {
                             Icon(Icons.Filled.Add, contentDescription = "Add Transaction")
                         }
                         IconButton(onClick = {
                             vm.deleteCustomer(customerId = customer.id, customerName = customer.name)
-                            // onBack() is handled automatically when customer disappears from the list
                         }) {
                             Icon(
                                 Icons.Filled.Delete,
@@ -741,6 +766,17 @@ fun CustomerDetailScreen(
                             color = if (customer.balance > 0.0) warningColor()
                                     else MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Savings balance chip (only if there are savings)
+                if (customer.savingsBalance > 0.0 || customer.savingsEntries.isNotEmpty()) {
+                    item {
+                        AccentValueRow(
+                            label = "Savings Balance",
+                            value = formatMoney(customer.savingsBalance),
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -838,6 +874,13 @@ fun CustomerDetailScreen(
                 )
                 transactionToEdit = null
             }
+        )
+    }
+
+    if (showShareDialog) {
+        ShareStatementDialog(
+            customer = customer,
+            onDismiss = { showShareDialog = false }
         )
     }
 }
@@ -1910,5 +1953,201 @@ private class AmountExpressionParser(
         while (index < source.length && source[index].isWhitespace()) {
             index++
         }
+    }
+}
+@Composable
+private fun ShareStatementDialog(
+    customer: CustomerSummary,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isGenerating by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    val profileRepository = remember { com.radafiq.data.profile.UserProfileRepository() }
+    val profileState by profileRepository.state.collectAsState()
+    val userName = profileState.profile?.displayName?.takeIf { it.isNotBlank() }
+        ?: profileState.profile?.email?.takeIf { it.isNotBlank() }
+        ?: "Radafiq User"
+
+    // Start observing profile as soon as dialog opens
+    LaunchedEffect(Unit) {
+        profileRepository.observeCurrentUserProfile()
+    }
+
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            try {
+                val generator = com.radafiq.data.backup.StatementGenerator(context)
+                val statementUri = generator.generateStatement(customer, userName).getOrThrow()
+
+                // Share the PDF
+                val shareIntent = android.content.Intent().apply {
+                    action = android.content.Intent.ACTION_SEND
+                    putExtra(android.content.Intent.EXTRA_STREAM, statementUri)
+                    type = "application/pdf"
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(
+                    android.content.Intent.createChooser(
+                        shareIntent,
+                        "Share Statement"
+                    )
+                )
+                isGenerating = false
+                onDismiss()
+            } catch (e: Exception) {
+                isGenerating = false
+                errorMessage = "Failed to generate statement: ${e.localizedMessage ?: "Unknown error"}"
+            }
+        }
+    }
+
+    if (isGenerating) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Generating Statement") },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    Text(
+                        "Creating PDF statement...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {}
+        )
+    } else if (errorMessage.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = "" },
+            title = { Text("Error") },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                Button(onClick = { errorMessage = "" }) {
+                    Text("OK")
+                }
+            }
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Share Statement") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Generate a PDF statement with customer details, transactions, and EMI schedule.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    FlowCard(
+                        accentColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Customer",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    customer.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Total Used",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    formatMoney(customer.totalAmount),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Balance",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    formatMoney(customer.balance),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (customer.balance > 0.0) warningColor()
+                                            else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Text(
+                                "${customer.transactions.size} transaction(s)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Generated by",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    userName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isGenerating = true
+                    }
+                ) {
+                    Text("Generate & Share")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

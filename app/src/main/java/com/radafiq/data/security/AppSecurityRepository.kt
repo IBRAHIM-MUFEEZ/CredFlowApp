@@ -167,25 +167,48 @@ class AppSecurityRepository(context: Context) {
     }
 
     fun exportSettings(): Map<String, Any> {
+        val passcodeHash = preferences.getString(KEY_PASSCODE_HASH, null).orEmpty()
+        val passcodeSalt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
+        val recoveryQuestion = preferences.getString(KEY_RECOVERY_QUESTION, null).orEmpty()
+        val recoveryAnswerHash = preferences.getString(KEY_RECOVERY_ANSWER_HASH, null).orEmpty()
         return mapOf(
             KEY_LOCK_ENABLED to _state.value.lockEnabled,
-            KEY_BIOMETRIC_ENABLED to _state.value.biometricEnabled
+            KEY_BIOMETRIC_ENABLED to _state.value.biometricEnabled,
+            KEY_PASSCODE_HASH to passcodeHash,
+            KEY_PASSCODE_SALT to passcodeSalt,
+            KEY_RECOVERY_QUESTION to recoveryQuestion,
+            KEY_RECOVERY_ANSWER_HASH to recoveryAnswerHash
         )
     }
 
     fun restoreSettings(data: Map<String, Any?>) {
         val lockEnabled = data[KEY_LOCK_ENABLED] as? Boolean ?: false
         val biometricEnabled = data[KEY_BIOMETRIC_ENABLED] as? Boolean ?: false
+        val passcodeHash = (data[KEY_PASSCODE_HASH] as? String).orEmpty()
+        val passcodeSalt = (data[KEY_PASSCODE_SALT] as? String).orEmpty()
+        val recoveryQuestion = (data[KEY_RECOVERY_QUESTION] as? String).orEmpty()
+        val recoveryAnswerHash = (data[KEY_RECOVERY_ANSWER_HASH] as? String).orEmpty()
 
-        preferences.edit()
-            .putBoolean(KEY_LOCK_ENABLED, lockEnabled && _state.value.hasPasscode)
-            .putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled && _state.value.hasPasscode)
-            .apply()
+        val hasPasscode = passcodeHash.isNotBlank()
+        val hasRecovery = recoveryQuestion.isNotBlank() && recoveryAnswerHash.isNotBlank()
 
-        _state.value = _state.value.copy(
-            lockEnabled = lockEnabled && _state.value.hasPasscode,
-            biometricEnabled = biometricEnabled && _state.value.hasPasscode,
-            isUnlocked = if (lockEnabled && _state.value.hasPasscode) false else true
+        preferences.edit().apply {
+            if (hasPasscode) putString(KEY_PASSCODE_HASH, passcodeHash)
+            if (passcodeSalt.isNotBlank()) putString(KEY_PASSCODE_SALT, passcodeSalt)
+            if (recoveryQuestion.isNotBlank()) putString(KEY_RECOVERY_QUESTION, recoveryQuestion)
+            if (recoveryAnswerHash.isNotBlank()) putString(KEY_RECOVERY_ANSWER_HASH, recoveryAnswerHash)
+            putBoolean(KEY_LOCK_ENABLED, lockEnabled && hasPasscode)
+            putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled && hasPasscode)
+            apply()
+        }
+
+        _state.value = AppSecurityState(
+            lockEnabled = lockEnabled && hasPasscode,
+            biometricEnabled = biometricEnabled && hasPasscode,
+            hasPasscode = hasPasscode,
+            hasRecoveryQuestion = hasRecovery,
+            recoveryQuestion = recoveryQuestion,
+            isUnlocked = true
         )
     }
 
@@ -244,12 +267,21 @@ class AppSecurityRepository(context: Context) {
     }
 
     private fun hashPasscode(passcode: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(passcode.toByteArray())
+        // Salt with device-specific + app-specific value to prevent rainbow table attacks
+        val salt = preferences.getString(KEY_PASSCODE_SALT, null) ?: run {
+            val newSalt = java.util.UUID.randomUUID().toString()
+            preferences.edit().putString(KEY_PASSCODE_SALT, newSalt).apply()
+            newSalt
+        }
+        val bytes = MessageDigest.getInstance("SHA-256")
+            .digest("$salt:$passcode".toByteArray())
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     private fun hashRecoveryAnswer(answer: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(answer.toByteArray())
+        val salt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
+        val bytes = MessageDigest.getInstance("SHA-256")
+            .digest("$salt:recovery:$answer".toByteArray())
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
@@ -260,6 +292,7 @@ class AppSecurityRepository(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "radafiq_security"
         const val KEY_PASSCODE_HASH = "passcode_hash"
+        const val KEY_PASSCODE_SALT = "passcode_salt"
         const val KEY_LOCK_ENABLED = "lock_enabled"
         const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
         const val KEY_RECOVERY_QUESTION = "recovery_question"

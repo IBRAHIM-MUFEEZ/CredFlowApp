@@ -8,6 +8,8 @@ import com.radafiq.data.models.CustomerSummary
 import com.radafiq.data.models.CustomerTransaction
 import com.radafiq.data.models.FirestoreBackupPayload
 import com.radafiq.data.models.IndianAccountCatalog
+import com.radafiq.data.models.SavingsEntry
+import com.radafiq.data.models.SavingsType
 import com.radafiq.data.auth.LocalIdentityRepository
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentReference
@@ -207,26 +209,20 @@ class FirebaseRepository(
         amount: Double,
         transactionDate: String
     ) {
-        // Use a Map<String, Any?> and filter nulls — FieldValue.delete() needs special handling
+        val data = mutableMapOf<String, Any>(
+            "transactionName" to transactionName,
+            "accountId" to accountId,
+            "accountName" to accountName,
+            "accountType" to accountKind.storageValue,
+            "amount" to amount,
+            "transactionDate" to transactionDate,
+            "givenDate" to transactionDate,
+            "dueDate" to FieldValue.delete()
+        )
+
         transactionsCollection()
             .document(transactionId)
-            .set(
-                mapOf(
-                    "transactionName" to transactionName,
-                    "accountId" to accountId,
-                    "accountName" to accountName,
-                    "accountType" to accountKind.storageValue,
-                    "amount" to amount,
-                    "transactionDate" to transactionDate,
-                    "givenDate" to transactionDate
-                ),
-                SetOptions.merge()
-            )
-            .await()
-        // Clear dueDate separately to avoid FieldValue type mismatch
-        transactionsCollection()
-            .document(transactionId)
-            .update("dueDate", FieldValue.delete())
+            .set(data, SetOptions.merge())
             .await()
     }
 
@@ -269,73 +265,92 @@ class FirebaseRepository(
         paymentsCollection().add(data).await()
     }
 
-    fun listenAllData(onResult: (AppData) -> Unit) {
+    // ── Savings ───────────────────────────────────────────────────────────────
+
+    suspend fun addSavingsEntry(
+        customerId: String,
+        customerName: String,
+        amount: Double,
+        type: SavingsType,
+        note: String,
+        date: String
+    ) {
+        savingsCollection().add(
+            hashMapOf(
+                "customerId"   to customerId,
+                "customerName" to customerName,
+                "amount"       to amount,
+                "type"         to type.storageValue,
+                "note"         to note,
+                "date"         to date
+            )
+        ).await()
+    }
+
+    suspend fun deleteSavingsEntry(entryId: String) {
+        savingsCollection().document(entryId).delete().await()
+    }
+
+    fun listenAllData(onResult: (AppData) -> Unit): List<com.google.firebase.firestore.ListenerRegistration> {
         val root = userRoot()
 
         var latestCustomers: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
         var latestAccounts: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
         var latestTransactions: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
         var latestPayments: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
+        var latestSavings: List<com.google.firebase.firestore.DocumentSnapshot> = emptyList()
 
         var customersReady = false
         var accountsReady = false
         var transactionsReady = false
         var paymentsReady = false
-
-        // Synchronize notifyIfReady to prevent race conditions from concurrent snapshot callbacks
-        val lock = Any()
+        var savingsReady = false
 
         fun notifyIfReady() {
-            synchronized(lock) {
-                if (customersReady && accountsReady && transactionsReady && paymentsReady) {
-                    val appData = runCatching {
-                        buildAppData(
-                            customers = latestCustomers,
-                            accounts = latestAccounts,
-                            transactions = latestTransactions,
-                            payments = latestPayments
-                        )
-                    }.getOrNull() ?: return
-                    onResult(appData)
-                }
+            if (customersReady && accountsReady && transactionsReady && paymentsReady && savingsReady) {
+                onResult(
+                    buildAppData(
+                        customers = latestCustomers,
+                        accounts = latestAccounts,
+                        transactions = latestTransactions,
+                        payments = latestPayments,
+                        savings = latestSavings
+                    )
+                )
             }
         }
 
-        root.collection("customers").addSnapshotListener { snap, err ->
-            if (err != null) return@addSnapshotListener
-            synchronized(lock) {
-                latestCustomers = snap?.documents.orEmpty()
-                customersReady = true
-            }
+        val r1 = root.collection("customers").addSnapshotListener { snap, _ ->
+            latestCustomers = snap?.documents.orEmpty()
+            customersReady = true
             notifyIfReady()
         }
 
-        root.collection("accounts").addSnapshotListener { snap, err ->
-            if (err != null) return@addSnapshotListener
-            synchronized(lock) {
-                latestAccounts = snap?.documents.orEmpty()
-                accountsReady = true
-            }
+        val r2 = root.collection("accounts").addSnapshotListener { snap, _ ->
+            latestAccounts = snap?.documents.orEmpty()
+            accountsReady = true
             notifyIfReady()
         }
 
-        root.collection("transactions").addSnapshotListener { snap, err ->
-            if (err != null) return@addSnapshotListener
-            synchronized(lock) {
-                latestTransactions = snap?.documents.orEmpty()
-                transactionsReady = true
-            }
+        val r3 = root.collection("transactions").addSnapshotListener { snap, _ ->
+            latestTransactions = snap?.documents.orEmpty()
+            transactionsReady = true
             notifyIfReady()
         }
 
-        root.collection("payments").addSnapshotListener { snap, err ->
-            if (err != null) return@addSnapshotListener
-            synchronized(lock) {
-                latestPayments = snap?.documents.orEmpty()
-                paymentsReady = true
-            }
+        val r4 = root.collection("payments").addSnapshotListener { snap, _ ->
+            latestPayments = snap?.documents.orEmpty()
+            paymentsReady = true
             notifyIfReady()
         }
+
+        val r5 = root.collection("savings").addSnapshotListener { snap, _ ->
+            latestSavings = snap?.documents.orEmpty()
+            savingsReady = true
+            notifyIfReady()
+        }
+
+        return listOf(r1, r2, r3, r4, r5)
     }
 
     suspend fun exportBackup(
@@ -418,6 +433,20 @@ class FirebaseRepository(
             )
         }
 
+        val savings = savingsCollection().get().await().documents.map { document ->
+            BackupRecord(
+                id = document.id,
+                fields = mapOf(
+                    "customerId"   to document.getString("customerId").orEmpty(),
+                    "customerName" to document.getString("customerName").orEmpty(),
+                    "amount"       to (document.getDouble("amount") ?: 0.0),
+                    "type"         to document.getString("type").orEmpty(),
+                    "note"         to document.getString("note").orEmpty(),
+                    "date"         to document.getString("date").orEmpty()
+                )
+            )
+        }
+
         return FirestoreBackupPayload(
             exportedAt = Instant.now().toString(),
             profile = profile,
@@ -425,7 +454,8 @@ class FirebaseRepository(
             customers = customers,
             accounts = accounts,
             transactions = transactions,
-            payments = payments
+            payments = payments,
+            savings = savings
         )
     }
 
@@ -489,6 +519,15 @@ class FirebaseRepository(
                     )
                 )
             }
+
+            payload.savings.forEach { record ->
+                add(
+                    PendingWrite(
+                        reference = savingsCollection().document(record.id),
+                        fields = record.fields.filterValues { it != null }
+                    )
+                )
+            }
         }
     }
 
@@ -500,7 +539,8 @@ class FirebaseRepository(
         customers: List<DocumentSnapshot>,
         accounts: List<DocumentSnapshot>,
         transactions: List<DocumentSnapshot>,
-        payments: List<DocumentSnapshot>
+        payments: List<DocumentSnapshot>,
+        savings: List<DocumentSnapshot>
     ): AppData {
         val accountTotals = linkedMapOf<String, RunningAccountTotal>()
 
@@ -601,6 +641,16 @@ class FirebaseRepository(
                         )
                     }
                     accountTotal.totalUsed += amount
+
+                    // Customer partial payments and settlements reduce the outstanding balance
+                    val partialPaid = transaction.getDouble("partialPaidAmount") ?: 0.0
+                    val isSettledTx = transaction.getBoolean("isSettled") == true
+                    when {
+                        // Settled: full amount is paid (partial is subsumed)
+                        isSettledTx -> accountTotal.customerPaid += amount
+                        // Unsettled with partial: only count the partial
+                        partialPaid > 0.0 -> accountTotal.customerPaid += partialPaid
+                    }
                 }
 
                 val targetCustomers = if (isDeleted) deletedCustomerTotals else customerTotals
@@ -664,19 +714,40 @@ class FirebaseRepository(
         }
 
         val accountSummaries = accountTotals.values.map { total ->
+            // payable = what customers still owe (used - customer paid)
+            // pending = owner's personal payments toward the account bill
+            val customerOutstanding = (total.totalUsed - total.customerPaid).coerceAtLeast(0.0)
             CardSummary(
                 id = total.id,
                 name = total.name,
                 accountKind = total.accountKind,
                 bill = total.totalUsed,
                 pending = total.totalPaid,
-                payable = (total.totalUsed - total.totalPaid).coerceAtLeast(0.0),
+                payable = customerOutstanding,
                 dueAmount = total.dueAmount,
                 dueDate = total.dueDate,
                 remindersEnabled = total.remindersEnabled,
                 reminderEmail = total.reminderEmail,
                 reminderWhatsApp = total.reminderWhatsApp
             )
+        }
+
+        // Attach savings entries to customers
+        savings.forEach { doc ->
+            val customerId = doc.getString("customerId").orEmpty()
+            val amount = doc.getDouble("amount") ?: 0.0
+            if (customerId.isBlank() || amount <= 0.0) return@forEach
+            val entry = SavingsEntry(
+                id = doc.id,
+                customerId = customerId,
+                customerName = doc.getString("customerName").orEmpty(),
+                amount = amount,
+                type = SavingsType.fromStorage(doc.getString("type")),
+                note = doc.getString("note").orEmpty(),
+                date = doc.getString("date").orEmpty()
+            )
+            customerTotals[customerId]?.savingsEntries?.add(entry)
+            deletedCustomerTotals[customerId]?.savingsEntries?.add(entry)
         }
 
         val customerSummaries = customerTotals.values.map { total -> total.toSummary() }
@@ -691,13 +762,19 @@ class FirebaseRepository(
 
     private fun RunningCustomerTotal.toSummary(): CustomerSummary {
         // totalAmount already excludes future EMIs (set in buildAppData)
-        val totalPartialPaid = transactions
-            .filter { t ->
-                if (!t.isEmi) return@filter true
-                !t.isScheduledForFutureMonth()
-            }
+        val visibleTxns = transactions.filter { t ->
+            if (!t.isEmi) true else !t.isScheduledForFutureMonth()
+        }
+        // For settled transactions: count the full amount (partial is subsumed by settlement)
+        // For unsettled transactions: count only partial paid amount
+        val totalPartialPaid = visibleTxns
+            .filter { !it.isSettled }
             .sumOf { it.partialPaidAmount }
         val customerPaidAmount = manualPaidAmount + settledTransactionAmount + totalPartialPaid
+        val sortedSavings = savingsEntries.sortedByDescending { it.date }
+        val savingsBalance = sortedSavings.sumOf {
+            if (it.type == SavingsType.DEPOSIT) it.amount else -it.amount
+        }.coerceAtLeast(0.0)
         return CustomerSummary(
             id = id,
             name = name,
@@ -711,7 +788,9 @@ class FirebaseRepository(
                 compareByDescending<CustomerTransaction> { it.transactionDate }
                     .thenByDescending { it.id }
             ),
-            isDeleted = isDeleted
+            isDeleted = isDeleted,
+            savingsBalance = savingsBalance,
+            savingsEntries = sortedSavings
         )
     }
 
@@ -730,12 +809,16 @@ class FirebaseRepository(
     private fun paymentsCollection() = userRoot()
         .collection("payments")
 
+    private fun savingsCollection() = userRoot()
+        .collection("savings")
+
     private data class RunningAccountTotal(
         val id: String,
         val name: String,
         val accountKind: AccountKind,
         var totalUsed: Double = 0.0,
-        var totalPaid: Double = 0.0,
+        var totalPaid: Double = 0.0,       // owner's personal payments (payments collection)
+        var customerPaid: Double = 0.0,    // customer partial + settled payments
         var dueAmount: Double = 0.0,
         var dueDate: String = "",
         var remindersEnabled: Boolean = false,
@@ -750,6 +833,7 @@ class FirebaseRepository(
         var settledTransactionAmount: Double = 0.0,
         var totalAmount: Double = 0.0,
         val transactions: MutableList<CustomerTransaction> = mutableListOf(),
+        val savingsEntries: MutableList<SavingsEntry> = mutableListOf(),
         val isDeleted: Boolean = false
     )
 

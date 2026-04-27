@@ -1,8 +1,10 @@
 package com.radafiq.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
@@ -21,14 +24,21 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.radafiq.data.models.AccountKind
 import com.radafiq.data.models.CardSummary
+import com.radafiq.data.models.CustomerSummary
 import com.radafiq.reminders.DueReminderScheduler
 import com.radafiq.viewmodel.MainViewModel
 import kotlin.math.abs
@@ -48,17 +59,17 @@ fun AccountsScreen(
     cards: List<CardSummary>,
     vm: MainViewModel = viewModel(),
     modifier: Modifier = Modifier,
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenAccount: (String) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val dueReminderScheduler = remember(context) { DueReminderScheduler(context) }
     val creditCards = cards.filter { it.accountKind == AccountKind.CREDIT_CARD }
     val bankAccounts = cards.filter { it.accountKind == AccountKind.BANK_ACCOUNT }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -83,9 +94,7 @@ fun AccountsScreen(
                 }
             }
         } else {
-            item {
-                AccountSectionTitle("Credit Cards")
-            }
+            item { AccountSectionTitle("Credit Cards") }
 
             if (creditCards.isEmpty()) {
                 item {
@@ -96,39 +105,12 @@ fun AccountsScreen(
                 }
             } else {
                 items(creditCards, key = { it.id }) { card ->
-                    AccountCard(
-                        card = card,
-                        onAdjustPaid = { amount ->
-                            vm.addPayment(
-                                accountId = card.id,
-                                accountName = card.name,
-                                accountKind = card.accountKind,
-                                amount = amount
-                            )
-                        },
-                        onUpdateCreditDue = { amount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp ->
-                            vm.updateCreditCardDue(
-                                accountId = card.id,
-                                accountName = card.name,
-                                amount = amount,
-                                dueDate = dueDate,
-                                remindersEnabled = remindersEnabled,
-                                reminderEmail = reminderEmail,
-                                reminderWhatsApp = reminderWhatsApp
-                            )
-                            dueReminderScheduler.syncDueReminders(
-                                accountId = card.id,
-                                accountName = card.name,
-                                dueDate = dueDate,
-                                enabled = remindersEnabled
-                            )
-                        }
-                    )
+                    AccountListRow(card = card, onClick = { onOpenAccount(card.id) })
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 AccountSectionTitle("Bank Accounts")
             }
 
@@ -141,8 +123,54 @@ fun AccountsScreen(
                 }
             } else {
                 items(bankAccounts, key = { it.id }) { card ->
-                    AccountCard(card = card)
+                    AccountListRow(card = card, onClick = { onOpenAccount(card.id) })
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountListRow(
+    card: CardSummary,
+    onClick: () -> Unit
+) {
+    FlowCard(
+        accentColor = accountAccent(card.accountKind),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = card.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = card.accountKind.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatMoney(card.bill),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = accountAccent(card.accountKind)
+                )
+                Text(
+                    text = "Total used",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -594,4 +622,259 @@ fun CreditCardDueDialog(
             }
         }
     )
+}
+
+// ── Account detail screen ─────────────────────────────────────────────────────
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun AccountDetailScreen(
+    accountId: String,
+    vm: MainViewModel = viewModel(),
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val dueReminderScheduler = remember(context) { DueReminderScheduler(context) }
+    val cards by vm.cards.collectAsState()
+    val customers by vm.customers.collectAsState()
+    val card = cards.find { it.id == accountId }
+
+    if (card == null) {
+        LaunchedEffect(Unit) { onBack() }
+        RadafiqBackground { Box(modifier = Modifier.fillMaxSize()) }
+        return
+    }
+
+    // Customers that have at least one transaction on this account
+    val accountCustomers = remember(customers, accountId) {
+        customers.mapNotNull { customer ->
+            val txns = customer.transactions.filter { it.accountId == accountId && it.isVisibleInTransactions() }
+            if (txns.isEmpty()) null
+            else {
+                val used = txns.sumOf { it.amount }
+                // Settled: full amount paid. Unsettled: only partial counts.
+                val paid = txns.filter { it.isSettled }.sumOf { it.amount } +
+                    txns.filter { !it.isSettled }.sumOf { it.partialPaidAmount }
+                val due = (used - paid).coerceAtLeast(0.0)
+                Triple(customer, used, due)
+            }
+        }.sortedByDescending { it.third }
+    }
+
+    val accentColor = accountAccent(card.accountKind)
+
+    RadafiqBackground {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = card.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = card.accountKind.label,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            }
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Summary strip
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricPill(
+                            label = "Total Used",
+                            value = formatMoney(card.bill),
+                            color = accentColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricPill(
+                            label = "Personal Paid",
+                            value = formatMoney(card.pending),
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricPill(
+                            label = "Balance",
+                            value = formatMoney(card.payable),
+                            color = if (card.payable > 0.0) warningColor() else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Credit card due section
+                if (card.accountKind == AccountKind.CREDIT_CARD) {
+                    item {
+                        FlowCard(accentColor = accentColor) {
+                            var showPaidEditor by remember { mutableStateOf(false) }
+                            var showDueEditor by remember { mutableStateOf(false) }
+
+                            AdaptiveHeaderRow(
+                                leading = {
+                                    Text(
+                                        text = "Credit Card Due",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                trailing = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        TextButton(onClick = { showPaidEditor = true }) { Text("Adjust Paid") }
+                                        TextButton(onClick = { showDueEditor = true }) { Text("Edit Due") }
+                                    }
+                                }
+                            )
+                            CreditCardDueStatus(card)
+
+                            if (showPaidEditor) {
+                                CreditCardPaidDialog(
+                                    card = card,
+                                    onDismiss = { showPaidEditor = false },
+                                    onSave = { amount ->
+                                        vm.addPayment(
+                                            accountId = card.id,
+                                            accountName = card.name,
+                                            accountKind = card.accountKind,
+                                            amount = amount
+                                        )
+                                        showPaidEditor = false
+                                    }
+                                )
+                            }
+                            if (showDueEditor) {
+                                CreditCardDueDialog(
+                                    card = card,
+                                    onDismiss = { showDueEditor = false },
+                                    onSave = { amount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp ->
+                                        vm.updateCreditCardDue(
+                                            accountId = card.id,
+                                            accountName = card.name,
+                                            amount = amount,
+                                            dueDate = dueDate,
+                                            remindersEnabled = remindersEnabled,
+                                            reminderEmail = reminderEmail,
+                                            reminderWhatsApp = reminderWhatsApp
+                                        )
+                                        dueReminderScheduler.syncDueReminders(
+                                            accountId = card.id,
+                                            accountName = card.name,
+                                            dueDate = dueDate,
+                                            enabled = remindersEnabled
+                                        )
+                                        showDueEditor = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Customers header
+                item {
+                    Text(
+                        text = "Customers",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                if (accountCustomers.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            EmptyState(
+                                title = "No customers yet",
+                                subtitle = "Customers who use this account will appear here."
+                            )
+                        }
+                    }
+                } else {
+                    items(accountCustomers, key = { it.first.id }) { (customer, used, due) ->
+                        AccountCustomerRow(
+                            customer = customer,
+                            usedAmount = used,
+                            dueAmount = due,
+                            accentColor = accentColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountCustomerRow(
+    customer: CustomerSummary,
+    usedAmount: Double,
+    dueAmount: Double,
+    accentColor: androidx.compose.ui.graphics.Color
+) {
+    FlowCard(accentColor = accentColor) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = customer.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Used ${formatMoney(usedAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatMoney(dueAmount),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (dueAmount > 0.0) warningColor() else MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (dueAmount > 0.0) "Due" else "Settled",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }

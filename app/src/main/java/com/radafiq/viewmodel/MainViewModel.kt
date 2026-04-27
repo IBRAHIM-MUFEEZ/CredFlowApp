@@ -58,6 +58,7 @@ class MainViewModel(
     private var hasObservedInitialSnapshot = false
     // Snapshots to skip after restore (our own writes echo back as Firestore snapshots)
     private var snapshotsToSkip = 0
+    private var firestoreListeners: List<com.google.firebase.firestore.ListenerRegistration> = emptyList()
 
     // Call once from MainActivity to enable auto-backup
     fun initAutoBackup(
@@ -81,7 +82,7 @@ class MainViewModel(
     }
 
     private fun startListening() {
-        repository.listenAllData(::handleObservedAppData)
+        firestoreListeners = repository.listenAllData(::handleObservedAppData)
     }
 
     /**
@@ -90,6 +91,8 @@ class MainViewModel(
      */
     fun reinitialize() {
         autoBackupJob?.cancel()
+        firestoreListeners.forEach { it.remove() }
+        firestoreListeners = emptyList()
         activeDriveOperationCount = 0
         hasObservedInitialSnapshot = false
         snapshotsToSkip = 0
@@ -97,25 +100,19 @@ class MainViewModel(
         _customers.value = emptyList()
         _deletedCustomers.value = emptyList()
         _driveOperationMessage.value = null
-        // Replace repository so writes (addTransaction, addCustomer, etc.) also use the new path
         repository = FirebaseRepository()
-        repository.listenAllData(::handleObservedAppData)
+        startListening()
     }
 
     /** Call before a restore so the echoed Firestore snapshots don't trigger auto-backup. */
     fun suppressNextBackups(count: Int = 3) {
-        snapshotsToSkip = count
+        snapshotsToSkip = (snapshotsToSkip + count).coerceAtLeast(0)
     }
 
     private fun handleObservedAppData(appData: AppData) {
-        try {
-            _cards.value = appData.accounts
-            _customers.value = appData.customers
-            _deletedCustomers.value = appData.deletedCustomers
-        } catch (e: Exception) {
-            android.util.Log.e("ViewModel", "Error updating state: ${e.localizedMessage}", e)
-            return
-        }
+        _cards.value = appData.accounts
+        _customers.value = appData.customers
+        _deletedCustomers.value = appData.deletedCustomers
 
         // Skip the very first snapshot (initial load — not a user change)
         if (!hasObservedInitialSnapshot) {
@@ -170,6 +167,9 @@ class MainViewModel(
             setSyncResult(SyncState.ERROR, "No internet connection.")
         } catch (e: java.net.SocketTimeoutException) {
             setSyncResult(SyncState.ERROR, "Connection timed out.")
+        } catch (e: com.google.android.gms.auth.GoogleAuthException) {
+            setSyncResult(SyncState.ERROR, "Google auth expired. Please sign in again.")
+            android.util.Log.w("AutoBackup", "Token fetch failed: ${e.localizedMessage}", e)
         } catch (e: Exception) {
             val msg = e.localizedMessage?.take(60) ?: "Sync failed."
             setSyncResult(SyncState.ERROR, msg)
@@ -242,6 +242,9 @@ class MainViewModel(
                 setSyncResult(SyncState.ERROR, "No internet connection.")
             } catch (e: java.net.SocketTimeoutException) {
                 setSyncResult(SyncState.ERROR, "Connection timed out.")
+            } catch (e: com.google.android.gms.auth.GoogleAuthException) {
+                setSyncResult(SyncState.ERROR, "Google auth expired. Please sign in again.")
+                android.util.Log.w("ManualSync", "Token fetch failed: ${e.localizedMessage}", e)
             } catch (e: Exception) {
                 val msg = e.localizedMessage?.take(60) ?: "Sync failed."
                 setSyncResult(SyncState.ERROR, msg)
@@ -480,5 +483,48 @@ class MainViewModel(
                 date = LocalDate.now().toString()
             )
         }
+    }
+
+    // ── Savings ───────────────────────────────────────────────────────────────
+
+    fun addSavingsDeposit(customerId: String, customerName: String, amount: String, note: String) {
+        val parsed = amount.toDoubleOrNull() ?: return
+        if (parsed <= 0.0) return
+        viewModelScope.launch {
+            repository.addSavingsEntry(
+                customerId = customerId,
+                customerName = customerName,
+                amount = parsed,
+                type = com.radafiq.data.models.SavingsType.DEPOSIT,
+                note = note.trim(),
+                date = LocalDate.now().toString()
+            )
+        }
+    }
+
+    fun addSavingsWithdrawal(customerId: String, customerName: String, amount: String, note: String) {
+        val parsed = amount.toDoubleOrNull() ?: return
+        if (parsed <= 0.0) return
+        viewModelScope.launch {
+            repository.addSavingsEntry(
+                customerId = customerId,
+                customerName = customerName,
+                amount = parsed,
+                type = com.radafiq.data.models.SavingsType.WITHDRAWAL,
+                note = note.trim(),
+                date = LocalDate.now().toString()
+            )
+        }
+    }
+
+    fun deleteSavingsEntry(entryId: String) {
+        viewModelScope.launch { repository.deleteSavingsEntry(entryId) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        autoBackupJob?.cancel()
+        syncStatusResetJob?.cancel()
+        firestoreListeners.forEach { it.remove() }
     }
 }

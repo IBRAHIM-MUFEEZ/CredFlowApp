@@ -121,6 +121,16 @@ data class CardSummary(
     val reminderWhatsApp: String = ""
 )
 
+fun CardSummary.hasLedgerActivity(): Boolean {
+    return bill > 0.0 ||
+        pending > 0.0 ||
+        dueAmount > 0.0 ||
+        dueDate.isNotBlank() ||
+        remindersEnabled ||
+        reminderEmail.isNotBlank() ||
+        reminderWhatsApp.isNotBlank()
+}
+
 data class CustomerSummary(
     val id: String,
     val name: String,
@@ -131,8 +141,30 @@ data class CustomerSummary(
     val partialPaidAmount: Double,
     val balance: Double,
     val transactions: List<CustomerTransaction>,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    val savingsBalance: Double = 0.0,
+    val savingsEntries: List<SavingsEntry> = emptyList()
 )
+
+data class SavingsEntry(
+    val id: String,
+    val customerId: String,
+    val customerName: String,
+    val amount: Double,
+    val type: SavingsType,
+    val note: String = "",
+    val date: String
+)
+
+enum class SavingsType(val label: String, val storageValue: String) {
+    DEPOSIT("Deposit", "deposit"),
+    WITHDRAWAL("Withdrawal", "withdrawal");
+
+    companion object {
+        fun fromStorage(value: String?): SavingsType =
+            if (value == "withdrawal") WITHDRAWAL else DEPOSIT
+    }
+}
 
 data class CustomerTransaction(
     val id: String,

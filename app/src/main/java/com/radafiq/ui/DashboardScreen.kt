@@ -95,7 +95,8 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     profileName: String,
     vm: MainViewModel = viewModel(),
-    onOpenCustomer: (String) -> Unit = {}
+    onOpenCustomer: (String) -> Unit = {},
+    onOpenAccount: (String) -> Unit = {}
 ) {
     var currentScreen by rememberSaveable { mutableStateOf(DashboardTab.HOME) }
     val cards by vm.cards.collectAsState()
@@ -163,7 +164,8 @@ fun DashboardScreen(
                         cards = visibleCards,
                         vm = vm,
                         modifier = Modifier.padding(padding),
-                        onOpenSettings = onOpenSettings
+                        onOpenSettings = onOpenSettings,
+                        onOpenAccount = onOpenAccount
                     )
 
                     DashboardTab.CUSTOMERS -> CustomersScreen(
