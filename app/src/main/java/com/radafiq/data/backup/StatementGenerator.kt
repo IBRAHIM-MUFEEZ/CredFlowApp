@@ -21,19 +21,55 @@ import java.time.format.DateTimeFormatter
 
 class StatementGenerator(private val context: Context) {
 
-    // ── Brand palette (matches RadafiqDarkColors) ─────────────────────────────
-    private val BG_DEEP        = 0xFF0E0820.toInt()   // RadafiqNightDeep
-    private val BG_SOFT        = 0xFF1A1030.toInt()   // RadafiqNightSoft
-    private val BG_RAISED      = 0xFF231540.toInt()   // RadafiqNightRaised
-    private val PRIMARY        = 0xFF667EEA.toInt()   // RadafiqPurple
-    private val VIOLET         = 0xFF764BA2.toInt()   // RadafiqViolet
-    private val PINK           = 0xFFF093FB.toInt()   // RadafiqPink
-    private val RED_ACCENT     = 0xFFF5576C.toInt()   // RadafiqRed
-    private val TEXT_PRIMARY   = 0xFFF0EEFF.toInt()   // RadafiqText
-    private val TEXT_MUTED     = 0xFF9B8EC4.toInt()   // RadafiqMuted
-    private val OUTLINE        = 0xFF3D2B6B.toInt()   // RadafiqOutline
+    // ── Light palette (matches RadafiqLightColors) ────────────────────────────
+    private val LIGHT_BG_PAGE    = 0xFFF5F7FF.toInt()   // RadafiqCanvas
+    private val LIGHT_BG_RAISED  = 0xFFFFFFFF.toInt()   // white card
+    private val LIGHT_BG_SOFT    = 0xFFEDE8FF.toInt()   // surfaceVariant
+    private val LIGHT_TEXT_PRI   = 0xFF1A0A40.toInt()   // onBackground
+    private val LIGHT_TEXT_MUTED = 0xFF5A4880.toInt()   // onSurfaceVariant
+    private val LIGHT_OUTLINE    = 0xFFBDB0E0.toInt()
+
+    // ── Dark palette (matches RadafiqDarkColors) ──────────────────────────────
+    private val DARK_BG_DEEP     = 0xFF0E0820.toInt()
+    private val DARK_BG_SOFT     = 0xFF1A1030.toInt()
+    private val DARK_BG_RAISED   = 0xFF231540.toInt()
+    private val DARK_TEXT_PRI    = 0xFFF0EEFF.toInt()
+    private val DARK_TEXT_MUTED  = 0xFF9B8EC4.toInt()
+    private val DARK_OUTLINE     = 0xFF3D2B6B.toInt()
+
+    // ── Shared brand colors ───────────────────────────────────────────────────
+    private val PRIMARY        = 0xFF667EEA.toInt()
+    private val VIOLET         = 0xFF764BA2.toInt()
+    private val PINK           = 0xFFF093FB.toInt()
+    private val RED_ACCENT     = 0xFFF5576C.toInt()
     private val GREEN_SETTLED  = 0xFF4CAF50.toInt()
     private val ORANGE_PENDING = 0xFFFF9800.toInt()
+
+    // ── Active palette — set per generation ──────────────────────────────────
+    private var BG_DEEP      = DARK_BG_DEEP
+    private var BG_SOFT      = DARK_BG_SOFT
+    private var BG_RAISED    = DARK_BG_RAISED
+    private var TEXT_PRIMARY = DARK_TEXT_PRI
+    private var TEXT_MUTED   = DARK_TEXT_MUTED
+    private var OUTLINE      = DARK_OUTLINE
+
+    private fun applyTheme(isDark: Boolean) {
+        if (isDark) {
+            BG_DEEP      = DARK_BG_DEEP
+            BG_SOFT      = DARK_BG_SOFT
+            BG_RAISED    = DARK_BG_RAISED
+            TEXT_PRIMARY = DARK_TEXT_PRI
+            TEXT_MUTED   = DARK_TEXT_MUTED
+            OUTLINE      = DARK_OUTLINE
+        } else {
+            BG_DEEP      = LIGHT_BG_PAGE
+            BG_SOFT      = LIGHT_BG_SOFT
+            BG_RAISED    = LIGHT_BG_RAISED
+            TEXT_PRIMARY = LIGHT_TEXT_PRI
+            TEXT_MUTED   = LIGHT_TEXT_MUTED
+            OUTLINE      = LIGHT_OUTLINE
+        }
+    }
 
     // ── Font loader — tries bundled Argentum Sans, falls back to system sans ──
     private fun loadTypeface(bold: Boolean = false): Typeface {
@@ -47,10 +83,13 @@ class StatementGenerator(private val context: Context) {
 
     suspend fun generateStatement(
         customer: CustomerSummary,
-        generatedByName: String = "Radafiq User"
+        generatedByName: String = "Radafiq User",
+        isDark: Boolean = true
     ): Result<Uri> {
         return withContext(Dispatchers.IO) {
             runCatching {
+                applyTheme(isDark)
+
                 val regular = loadTypeface(bold = false)
                 val bold    = loadTypeface(bold = true)
 
@@ -64,8 +103,7 @@ class StatementGenerator(private val context: Context) {
                 var page   = pdfDocument.startPage(pageInfo)
                 var canvas = page.canvas
 
-                // Dark gradient background for every page
-                drawPageBackground(canvas, pageWidth, pageHeight)
+                drawPageBackground(canvas, pageWidth, pageHeight, isDark)
 
                 yPosition = drawHeader(canvas, customer, pageWidth, 32, regular, bold)
                 yPosition += 18
@@ -92,7 +130,7 @@ class StatementGenerator(private val context: Context) {
                             val newInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
                             page   = pdfDocument.startPage(newInfo)
                             canvas = page.canvas
-                            drawPageBackground(canvas, pageWidth, pageHeight)
+                            drawPageBackground(canvas, pageWidth, pageHeight, isDark)
                             yPosition = 40
                         }
                         yPosition = drawTransactionRow(canvas, transaction, pageWidth, yPosition, regular, bold)
@@ -109,7 +147,7 @@ class StatementGenerator(private val context: Context) {
                         val newInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
                         page   = pdfDocument.startPage(newInfo)
                         canvas = page.canvas
-                        drawPageBackground(canvas, pageWidth, pageHeight)
+                        drawPageBackground(canvas, pageWidth, pageHeight, isDark)
                         yPosition = 40
                     }
                     yPosition += 16
@@ -129,25 +167,41 @@ class StatementGenerator(private val context: Context) {
         }
     }
 
-    // ── Page background: dark gradient matching app theme ─────────────────────
-    private fun drawPageBackground(canvas: Canvas, pageWidth: Int, pageHeight: Int) {
-        val bgPaint = Paint().apply {
-            shader = LinearGradient(
-                0f, 0f, 0f, pageHeight.toFloat(),
-                intArrayOf(0xFF06030F.toInt(), BG_DEEP, BG_SOFT),
-                floatArrayOf(0f, 0.45f, 1f),
-                Shader.TileMode.CLAMP
-            )
+    // ── Page background: gradient matching app theme ──────────────────────────
+    private fun drawPageBackground(canvas: Canvas, pageWidth: Int, pageHeight: Int, isDark: Boolean) {
+        if (isDark) {
+            val bgPaint = Paint().apply {
+                shader = LinearGradient(
+                    0f, 0f, 0f, pageHeight.toFloat(),
+                    intArrayOf(0xFF06030F.toInt(), BG_DEEP, BG_SOFT),
+                    floatArrayOf(0f, 0.45f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
+            // Subtle glow blobs
+            val glow1 = Paint().apply { color = 0x2E667EEA.toInt() }
+            val glow2 = Paint().apply { color = 0x1EF093FB.toInt() }
+            val glow3 = Paint().apply { color = 0x18764BA2.toInt() }
+            canvas.drawCircle(pageWidth * 0.18f, pageHeight * 0.10f, 90f, glow1)
+            canvas.drawCircle(pageWidth * 0.92f, pageHeight * 0.18f, 75f, glow2)
+            canvas.drawCircle(pageWidth * 0.76f, pageHeight * 0.86f, 70f, glow3)
+        } else {
+            val bgPaint = Paint().apply {
+                shader = LinearGradient(
+                    0f, 0f, 0f, pageHeight.toFloat(),
+                    intArrayOf(0xFFFFFFFF.toInt(), 0xFFF0EEFF.toInt(), LIGHT_BG_SOFT),
+                    floatArrayOf(0f, 0.5f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
+            // Subtle light glow blobs
+            val glow1 = Paint().apply { color = 0x18667EEA.toInt() }
+            val glow2 = Paint().apply { color = 0x10F093FB.toInt() }
+            canvas.drawCircle(pageWidth * 0.18f, pageHeight * 0.10f, 80f, glow1)
+            canvas.drawCircle(pageWidth * 0.88f, pageHeight * 0.15f, 65f, glow2)
         }
-        canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
-
-        // Subtle glow blobs (matching GlassBackdrop)
-        val glow1 = Paint().apply { color = 0x2E667EEA.toInt() }
-        val glow2 = Paint().apply { color = 0x1EF093FB.toInt() }
-        val glow3 = Paint().apply { color = 0x18764BA2.toInt() }
-        canvas.drawCircle(pageWidth * 0.18f, pageHeight * 0.10f, 90f, glow1)
-        canvas.drawCircle(pageWidth * 0.92f, pageHeight * 0.18f, 75f, glow2)
-        canvas.drawCircle(pageWidth * 0.76f, pageHeight * 0.86f, 70f, glow3)
     }
 
     // ── Header: logo + app name + title + customer name ───────────────────────

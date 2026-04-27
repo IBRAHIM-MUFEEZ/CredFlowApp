@@ -1969,6 +1969,10 @@ private fun ShareStatementDialog(
     val userName = profileState.profile?.displayName?.takeIf { it.isNotBlank() }
         ?: profileState.profile?.email?.takeIf { it.isNotBlank() }
         ?: "Radafiq User"
+    // Capture current theme so the PDF matches what the user sees
+    val isDarkTheme = androidx.compose.ui.platform.LocalConfiguration.current.let {
+        (it.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
 
     // Start observing profile as soon as dialog opens
     LaunchedEffect(Unit) {
@@ -1979,7 +1983,7 @@ private fun ShareStatementDialog(
         if (isGenerating) {
             try {
                 val generator = com.radafiq.data.backup.StatementGenerator(context)
-                val statementUri = generator.generateStatement(customer, userName).getOrThrow()
+                val statementUri = generator.generateStatement(customer, userName, isDarkTheme).getOrThrow()
 
                 // Share the PDF
                 val shareIntent = android.content.Intent().apply {
