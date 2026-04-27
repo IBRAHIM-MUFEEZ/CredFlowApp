@@ -108,9 +108,14 @@ class MainViewModel(
     }
 
     private fun handleObservedAppData(appData: AppData) {
-        _cards.value = appData.accounts
-        _customers.value = appData.customers
-        _deletedCustomers.value = appData.deletedCustomers
+        try {
+            _cards.value = appData.accounts
+            _customers.value = appData.customers
+            _deletedCustomers.value = appData.deletedCustomers
+        } catch (e: Exception) {
+            android.util.Log.e("ViewModel", "Error updating state: ${e.localizedMessage}", e)
+            return
+        }
 
         // Skip the very first snapshot (initial load — not a user change)
         if (!hasObservedInitialSnapshot) {

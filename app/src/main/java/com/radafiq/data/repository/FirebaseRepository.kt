@@ -207,20 +207,26 @@ class FirebaseRepository(
         amount: Double,
         transactionDate: String
     ) {
-        val data = mutableMapOf<String, Any>(
-            "transactionName" to transactionName,
-            "accountId" to accountId,
-            "accountName" to accountName,
-            "accountType" to accountKind.storageValue,
-            "amount" to amount,
-            "transactionDate" to transactionDate,
-            "givenDate" to transactionDate,
-            "dueDate" to FieldValue.delete()
-        )
-
+        // Use a Map<String, Any?> and filter nulls — FieldValue.delete() needs special handling
         transactionsCollection()
             .document(transactionId)
-            .set(data, SetOptions.merge())
+            .set(
+                mapOf(
+                    "transactionName" to transactionName,
+                    "accountId" to accountId,
+                    "accountName" to accountName,
+                    "accountType" to accountKind.storageValue,
+                    "amount" to amount,
+                    "transactionDate" to transactionDate,
+                    "givenDate" to transactionDate
+                ),
+                SetOptions.merge()
+            )
+            .await()
+        // Clear dueDate separately to avoid FieldValue type mismatch
+        transactionsCollection()
+            .document(transactionId)
+            .update("dueDate", FieldValue.delete())
             .await()
     }
 
@@ -276,40 +282,58 @@ class FirebaseRepository(
         var transactionsReady = false
         var paymentsReady = false
 
+        // Synchronize notifyIfReady to prevent race conditions from concurrent snapshot callbacks
+        val lock = Any()
+
         fun notifyIfReady() {
-            if (customersReady && accountsReady && transactionsReady && paymentsReady) {
-                onResult(
-                    buildAppData(
-                        customers = latestCustomers,
-                        accounts = latestAccounts,
-                        transactions = latestTransactions,
-                        payments = latestPayments
-                    )
-                )
+            synchronized(lock) {
+                if (customersReady && accountsReady && transactionsReady && paymentsReady) {
+                    val appData = runCatching {
+                        buildAppData(
+                            customers = latestCustomers,
+                            accounts = latestAccounts,
+                            transactions = latestTransactions,
+                            payments = latestPayments
+                        )
+                    }.getOrNull() ?: return
+                    onResult(appData)
+                }
             }
         }
 
-        root.collection("customers").addSnapshotListener { snap, _ ->
-            latestCustomers = snap?.documents.orEmpty()
-            customersReady = true
+        root.collection("customers").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            synchronized(lock) {
+                latestCustomers = snap?.documents.orEmpty()
+                customersReady = true
+            }
             notifyIfReady()
         }
 
-        root.collection("accounts").addSnapshotListener { snap, _ ->
-            latestAccounts = snap?.documents.orEmpty()
-            accountsReady = true
+        root.collection("accounts").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            synchronized(lock) {
+                latestAccounts = snap?.documents.orEmpty()
+                accountsReady = true
+            }
             notifyIfReady()
         }
 
-        root.collection("transactions").addSnapshotListener { snap, _ ->
-            latestTransactions = snap?.documents.orEmpty()
-            transactionsReady = true
+        root.collection("transactions").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            synchronized(lock) {
+                latestTransactions = snap?.documents.orEmpty()
+                transactionsReady = true
+            }
             notifyIfReady()
         }
 
-        root.collection("payments").addSnapshotListener { snap, _ ->
-            latestPayments = snap?.documents.orEmpty()
-            paymentsReady = true
+        root.collection("payments").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            synchronized(lock) {
+                latestPayments = snap?.documents.orEmpty()
+                paymentsReady = true
+            }
             notifyIfReady()
         }
     }
