@@ -19,7 +19,8 @@ export default function SecuritySetup() {
   const [error, setError] = useState('');
 
   const passcodesMatch = passcode.length === 6 && passcode === confirm;
-  const canSave = passcodesMatch && question && answer.trim();
+  // BUG-30 fix: require at least 3 characters for recovery answer
+  const canSave = passcodesMatch && question && answer.trim().length >= 3;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -97,7 +98,8 @@ export default function SecuritySetup() {
                 className="form-input"
                 value={answer}
                 onChange={e => setAnswer(e.target.value)}
-                placeholder="Your answer"
+                placeholder="Your answer (min. 3 characters)"
+                minLength={3}
               />
               <span className="text-muted text-xs" style={{ marginTop: 4 }}>
                 Forgot passcode recovery works only through this answer.

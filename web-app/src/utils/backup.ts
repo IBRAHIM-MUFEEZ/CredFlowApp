@@ -28,16 +28,24 @@ export function downloadJsonFile(json: string, filename: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    document.body.appendChild(a);
+    a.click();
+  } finally {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url); // BUG-09 fix: always revoke even if click throws
+  }
 }
 
 export function readJsonFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => resolve(e.target?.result as string);
+    reader.onload = e => {
+      // BUG-10 fix: guard against null target
+      const result = e.target?.result;
+      if (typeof result === 'string') resolve(result);
+      else reject(new Error('Failed to read file: unexpected result type'));
+    };
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });

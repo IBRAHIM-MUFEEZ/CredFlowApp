@@ -190,7 +190,12 @@ export default function CustomerDetail() {
         }
       } else {
         const amount = evaluateExpression(form.amount) ?? parseFloat(form.amount);
-        if (!isNaN(amount)) {
+        // BUG-42 fix: validate account is selected for non-person accounts
+        if (!isNaN(amount) && amount > 0) {
+          if (form.accountKind !== 'person' && !form.accountId) {
+            setSaving(false);
+            return; // account not selected — do nothing (button should be disabled)
+          }
           await addTransaction({
             customerId: customer.id,
             transactionName: form.transactionName,
@@ -241,7 +246,6 @@ export default function CustomerDetail() {
 
   const openEdit = (txn: CustomerTransaction) => {
     setEditTxn(txn);
-    const acctOption = ALL_ACCOUNTS.find(a => a.id === txn.accountId);
     setForm({
       ...defaultForm(),
       transactionName: txn.name,
@@ -353,9 +357,9 @@ export default function CustomerDetail() {
             <TransactionRow
               key={txn.id}
               txn={txn}
-              onSettle={(id, settled) => toggleTransactionSettled(id, settled)}
+              onSettle={async (id, settled) => { await toggleTransactionSettled(id, settled); }}
               onPartialPay={(id) => { setPartialPayId(id); setPartialAmount(''); }}
-              onDelete={(id) => deleteTransaction(id)}
+              onDelete={async (id) => { await deleteTransaction(id); }}
               onEdit={openEdit}
             />
           ))}
@@ -552,8 +556,8 @@ export default function CustomerDetail() {
               <button className="btn btn-outline" onClick={() => setPartialPayId(null)}>Cancel</button>
               <button
                 className="btn btn-primary"
-                onClick={() => {
-                  addPartialPayment(partialPayId, partialAmount);
+                onClick={async () => {
+                  await addPartialPayment(partialPayId, partialAmount);
                   setPartialPayId(null);
                 }}
                 disabled={!partialAmount || parseFloat(partialAmount) <= 0}
@@ -586,8 +590,8 @@ export default function CustomerDetail() {
               <button className="btn btn-outline" onClick={() => setShowDueEditor(false)}>Cancel</button>
               <button
                 className="btn btn-primary"
-                onClick={() => {
-                  updateCustomerDueAmount(customer.id, customer.name, dueAmount);
+                onClick={async () => {
+                  await updateCustomerDueAmount(customer.id, customer.name, dueAmount);
                   setShowDueEditor(false);
                 }}
               >
@@ -610,8 +614,8 @@ export default function CustomerDetail() {
               <button className="btn btn-outline" onClick={() => setConfirmDeleteCustomer(false)}>Cancel</button>
               <button
                 className="btn btn-danger"
-                onClick={() => {
-                  deleteCustomer(customer.id, customer.name);
+                onClick={async () => {
+                  await deleteCustomer(customer.id, customer.name);
                   navigate('/customers');
                 }}
               >

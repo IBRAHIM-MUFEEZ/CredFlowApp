@@ -129,6 +129,7 @@ export default function Dashboard() {
           style={{ cursor: 'pointer', border: '1px solid rgba(255,255,255,0.3)' }}
           onClick={() => navigate('/settings')}
           title="Settings"
+          aria-label="Open settings"
         >
           {profile?.photoUrl ? (
             <img
@@ -173,7 +174,8 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            {visibleCards.slice(0, 6).sort((a, b) => b.payable - a.payable).map(card => (
+// BUG-35 fix: sort first, then slice
+            {[...visibleCards].sort((a, b) => b.payable - a.payable).slice(0, 6).map(card => (
               <ActivityCard key={card.id} card={card} />
             ))}
             {personSummaries.slice(0, 6).map(person => (

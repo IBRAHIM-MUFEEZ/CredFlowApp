@@ -4,19 +4,21 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "firebase": "^10.7.1",
+    "date-fns": "^3.0.6",
+    "firebase": "^11.1.0",
+    "lucide-react": "^0.303.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.21.1",
-    "date-fns": "^3.0.6",
-    "lucide-react": "^0.303.0"
+    "react-router-dom": "^6.21.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "dotenv": "^17.4.2",
+    "firebase-admin": "^13.8.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.10"
+    "vite": "^6.3.5"
   },
   "scripts": {
     "start": "vite",

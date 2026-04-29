@@ -36,13 +36,15 @@ export default function SettingsPage() {
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showAccountsConfig, setShowAccountsConfig] = useState(false);
+  const [showRemovePasscodeConfirm, setShowRemovePasscodeConfirm] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveProfile = async () => {
     setSavingProfile(true);
     try {
-      await saveProfile(displayName, businessName, email);
+      // BUG-60 fix: preserve existing photoUrl — don't clear it on profile edit
+      await saveProfile(displayName, businessName, email, profile?.photoUrl ?? '');
       setEditProfile(false);
     } finally {
       setSavingProfile(false);
@@ -183,7 +185,7 @@ export default function SettingsPage() {
         </button>
 
         {security.hasPasscode && (
-          <button className="btn btn-outline btn-full" style={{ marginTop: 8 }} onClick={clearPasscode}>
+          <button className="btn btn-outline btn-full" style={{ marginTop: 8 }} onClick={() => setShowRemovePasscodeConfirm(true)}>
             Remove Passcode
           </button>
         )}
@@ -374,6 +376,22 @@ export default function SettingsPage() {
               <button className="btn btn-outline" onClick={() => setShowChangePasscode(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleChangePasscode} disabled={savingPasscode || !currentPasscode || passcode.length !== 6 || passcode !== confirmPasscode || !recoveryAnswer.trim()}>
                 {savingPasscode ? 'Updating...' : 'Update Passcode'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Passcode confirm */}
+      {showRemovePasscodeConfirm && (
+        <div className="modal-overlay" onClick={() => setShowRemovePasscodeConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">Remove Passcode?</h3>
+            <p className="modal-subtitle">This will disable app lock and remove all security settings. Are you sure?</p>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setShowRemovePasscodeConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => { clearPasscode(); setShowRemovePasscodeConfirm(false); }}>
+                Remove
               </button>
             </div>
           </div>

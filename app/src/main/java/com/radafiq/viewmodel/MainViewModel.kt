@@ -441,29 +441,34 @@ class MainViewModel(
         val firstEmi = firstMonthOverride?.takeIf { it > 0.0 } ?: baseEmi
         val groupId = java.util.UUID.randomUUID().toString()
         viewModelScope.launch {
-            val instalments = (0 until months).map { i ->
-                val emiAmount = if (i == 0) firstEmi else baseEmi
-                val emiDate = dateOverrides[i]?.let {
-                    runCatching { LocalDate.parse(it) }.getOrNull()
-                } ?: baseDate.plusMonths(i.toLong())
-                val dueDate = emiDate.plusMonths(1)
-                mutableMapOf<String, Any>(
-                    "customerId" to customerId,
-                    "transactionName" to "${transactionName.trim()} — EMI ${i + 1}/$months",
-                    "accountId" to accountId,
-                    "accountName" to accountName,
-                    "accountType" to AccountKind.CREDIT_CARD.storageValue,
-                    "customerName" to customerName.trim(),
-                    "amount" to emiAmount,
-                    "transactionDate" to emiDate.toString(),
-                    "givenDate" to emiDate.toString(),
-                    "dueDate" to dueDate.toString(),
-                    "emiGroupId" to groupId,
-                    "emiIndex" to i,
-                    "emiTotal" to months
-                )
+            try {
+                val instalments = (0 until months).map { i ->
+                    val emiAmount = if (i == 0) firstEmi else baseEmi
+                    val emiDate = dateOverrides[i]?.let {
+                        runCatching { LocalDate.parse(it) }.getOrNull()
+                    } ?: baseDate.plusMonths(i.toLong())
+                    val dueDate = emiDate.plusMonths(1)
+                    mutableMapOf<String, Any>(
+                        "customerId" to customerId,
+                        "transactionName" to "${transactionName.trim()} — EMI ${i + 1}/$months",
+                        "accountId" to accountId,
+                        "accountName" to accountName,
+                        "accountType" to AccountKind.CREDIT_CARD.storageValue,
+                        "customerName" to customerName.trim(),
+                        "amount" to emiAmount,
+                        "transactionDate" to emiDate.toString(),
+                        "givenDate" to emiDate.toString(),
+                        "dueDate" to dueDate.toString(),
+                        "emiGroupId" to groupId,
+                        "emiIndex" to i.toLong(),
+                        "emiTotal" to months.toLong(),
+                        "isSettled" to false
+                    )
+                }
+                repository.addEmiTransactionsBatch(instalments = instalments)
+            } catch (e: Exception) {
+                android.util.Log.e("EMI", "Failed to save EMI transactions: ${e.localizedMessage}", e)
             }
-            repository.addEmiTransactionsBatch(instalments = instalments)
         }
     }
 

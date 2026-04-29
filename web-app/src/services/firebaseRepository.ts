@@ -357,8 +357,9 @@ export async function permanentlyDeleteCustomer(uid: string, customerId: string,
   const legacySnap = await getDocs(query(transactionsCol(uid), where('customerName', '==', customerName)));
 
   const deleted = new Set<string>();
-  txnSnap.docs.forEach(d => { if (deleted.add(d.id)) batch.delete(d.ref); });
-  legacySnap.docs.forEach(d => { if (!deleted.has(d.id) && deleted.add(d.id)) batch.delete(d.ref); });
+  // BUG-19 fix: Set.add() always returns the Set (truthy) — check has() before add()
+  txnSnap.docs.forEach(d => { if (!deleted.has(d.id)) { deleted.add(d.id); batch.delete(d.ref); } });
+  legacySnap.docs.forEach(d => { if (!deleted.has(d.id)) { deleted.add(d.id); batch.delete(d.ref); } });
 
   await batch.commit();
 }

@@ -2166,6 +2166,7 @@ fun TransactionEditorDialog(
                         )
                     }
                     vm.clearDraftTransaction()
+                    onDismiss()
                 },
                 enabled = transactionName.isNotBlank() &&
                     transactionDate.isNotBlank() &&

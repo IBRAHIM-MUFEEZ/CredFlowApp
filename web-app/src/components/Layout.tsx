@@ -84,16 +84,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Bottom nav (mobile) */}
       <nav className="bottom-nav">
-        {NAV_ITEMS.slice(0, 5).map(({ path, label, icon: Icon }) => (
-          <button
-            key={path}
-            className={`bottom-nav-item${location.pathname.startsWith(path) ? ' active' : ''}`}
-            onClick={() => window.location.href = path}
-          >
-            <Icon size={20} />
-            {label}
-          </button>
-        ))}
+        {NAV_ITEMS.slice(0, 5).map(({ path, label, icon: Icon }) => {
+          const isActive = location.pathname.startsWith(path);
+          return (
+            <NavLink
+              key={path}
+              to={path}
+              className={`bottom-nav-item${isActive ? ' active' : ''}`}
+            >
+              <Icon size={20} />
+              {label}
+            </NavLink>
+          );
+        })}
       </nav>
     </div>
   );

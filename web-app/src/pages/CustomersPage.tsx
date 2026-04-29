@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, RefreshCw, Trash2, RotateCcw, Settings } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { formatMoney } from '../utils/format';
+import { formatMoney, getInitials } from '../utils/format';
 import { CustomerSummary } from '../types/models';
 
 function CustomerRow({ customer, onClick }: { customer: CustomerSummary; onClick: () => void }) {
@@ -15,7 +15,7 @@ function CustomerRow({ customer, onClick }: { customer: CustomerSummary; onClick
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div className="avatar">
-          {customer.name.slice(0, 2).toUpperCase()}
+          {getInitials(customer.name)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="truncate font-semibold">{customer.name}</div>
@@ -266,8 +266,8 @@ export default function CustomersPage() {
               <button className="btn btn-outline" onClick={() => setConfirmDelete(null)}>Cancel</button>
               <button
                 className="btn btn-danger"
-                onClick={() => {
-                  permanentlyDeleteCustomer(confirmDelete.id, confirmDelete.name);
+                onClick={async () => {
+                  await permanentlyDeleteCustomer(confirmDelete.id, confirmDelete.name);
                   setConfirmDelete(null);
                 }}
               >

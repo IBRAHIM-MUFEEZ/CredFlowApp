@@ -198,11 +198,11 @@ export default function AccountDetail() {
               <button className="btn btn-outline" onClick={() => setShowDueEditor(false)}>Cancel</button>
               <button
                 className="btn btn-primary"
-                onClick={() => {
-                  updateCreditCardDue({ accountId: card.id, accountName: card.name, amount: dueAmount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp });
+                onClick={async () => {
+                  await updateCreditCardDue({ accountId: card.id, accountName: card.name, amount: dueAmount, dueDate, remindersEnabled, reminderEmail, reminderWhatsApp });
                   setShowDueEditor(false);
                 }}
-                disabled={!dueAmount || !dueDate}
+                disabled={dueAmount === '' || !dueDate}
               >
                 Save
               </button>
@@ -224,8 +224,8 @@ export default function AccountDetail() {
               <button className="btn btn-outline" onClick={() => setShowPaymentEditor(false)}>Cancel</button>
               <button
                 className="btn btn-primary"
-                onClick={() => {
-                  addPayment(card.id, card.name, card.accountKind, paymentAmount);
+                onClick={async () => {
+                  await addPayment(card.id, card.name, card.accountKind, paymentAmount);
                   setShowPaymentEditor(false);
                 }}
                 disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}

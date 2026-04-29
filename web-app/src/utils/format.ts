@@ -20,12 +20,14 @@ export function todayString(): string {
 }
 
 export function getInitials(name: string): string {
+  // BUG-07 fix: handle empty string before split/map
+  if (!name || !name.trim()) return 'RA';
   return name
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map(w => w[0].toUpperCase())
+    .map(w => w[0]?.toUpperCase() || '')
     .join('') || 'RA';
 }
 

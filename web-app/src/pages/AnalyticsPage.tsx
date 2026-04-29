@@ -22,7 +22,8 @@ function cardMetricValue(card: CardSummary, metric: Metric): number {
 function customerMetricValue(customer: CustomerSummary, metric: Metric): number {
   switch (metric) {
     case 'USAGE': return customer.totalAmount;
-    case 'PAID': return customer.creditDueAmount;
+    // BUG-58 fix: total paid = manual paid + settled + partial
+    case 'PAID': return customer.creditDueAmount + customer.settledTransactionAmount + customer.partialPaidAmount;
     case 'OUTSTANDING': return customer.balance;
   }
 }
@@ -50,7 +51,9 @@ export default function AnalyticsPage() {
 
   const filteredCards = visibleCards.filter(c => c.accountKind === accountKindFilter);
   const sortedCustomers = [...customers].sort((a, b) => a.name.localeCompare(b.name));
-  const selectedCustomer = sortedCustomers.find(c => c.id === selectedCustomerId) ?? sortedCustomers[0];
+  // BUG-57 fix: derive selectedCustomer from state, default to first customer's id
+  const effectiveCustomerId = selectedCustomerId || sortedCustomers[0]?.id || '';
+  const selectedCustomer = sortedCustomers.find(c => c.id === effectiveCustomerId) ?? sortedCustomers[0];
 
   return (
     <div className="page-content">
@@ -156,7 +159,7 @@ export default function AnalyticsPage() {
                 <label className="form-label">Customer</label>
                 <select
                   className="form-select"
-                  value={selectedCustomer.id}
+                  value={effectiveCustomerId}
                   onChange={e => setSelectedCustomerId(e.target.value)}
                 >
                   {sortedCustomers.map(c => (

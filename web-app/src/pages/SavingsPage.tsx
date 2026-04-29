@@ -218,7 +218,7 @@ export default function SavingsPage() {
             </p>
             <div className="modal-actions">
               <button className="btn btn-outline" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={() => { deleteSavingsEntry(confirmDelete.id); setConfirmDelete(null); }}>
+              <button className="btn btn-danger" onClick={async () => { await deleteSavingsEntry(confirmDelete.id); setConfirmDelete(null); }}>
                 Delete
               </button>
             </div>

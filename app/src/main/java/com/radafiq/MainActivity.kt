@@ -474,6 +474,7 @@ class MainActivity : FragmentActivity() {
         val profile = profileState.profile
         val needsProfileSetup = profileState.isLoading.not() && profile?.isProfileComplete != true
         val needsSecuritySetup = profileState.isLoading.not() &&
+            !loginRestoreInProgress &&
             profile?.isProfileComplete == true &&
             !securityState.hasPasscode
         val requiresUnlock = profileState.isLoading.not() &&

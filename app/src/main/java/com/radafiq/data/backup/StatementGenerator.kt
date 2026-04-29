@@ -1,6 +1,7 @@
 package com.radafiq.data.backup
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -22,29 +23,30 @@ import java.time.format.DateTimeFormatter
 
 class StatementGenerator(private val context: Context) {
 
-    // ── Light palette (matches RadafiqLightColors) ────────────────────────────
-    private val LIGHT_BG_PAGE    = 0xFFF5F7FF.toInt()   // RadafiqCanvas
+    // ── Light palette (matches new blue-teal-green brand) ────────────────────
+    private val LIGHT_BG_PAGE    = 0xFFF0F8FF.toInt()   // ice blue canvas
     private val LIGHT_BG_RAISED  = 0xFFFFFFFF.toInt()   // white card
-    private val LIGHT_BG_SOFT    = 0xFFEDE8FF.toInt()   // surfaceVariant
-    private val LIGHT_TEXT_PRI   = 0xFF1A0A40.toInt()   // onBackground
-    private val LIGHT_TEXT_MUTED = 0xFF5A4880.toInt()   // onSurfaceVariant
-    private val LIGHT_OUTLINE    = 0xFFBDB0E0.toInt()
+    private val LIGHT_BG_SOFT    = 0xFFD8EFFA.toInt()   // surfaceVariant
+    private val LIGHT_TEXT_PRI   = 0xFF071525.toInt()   // deep navy text
+    private val LIGHT_TEXT_MUTED = 0xFF3A7FA8.toInt()   // muted blue
+    private val LIGHT_OUTLINE    = 0xFFA8D4EA.toInt()   // light teal outline
 
-    // ── Dark palette (matches RadafiqDarkColors) ──────────────────────────────
-    private val DARK_BG_DEEP     = 0xFF0E0820.toInt()
-    private val DARK_BG_SOFT     = 0xFF1A1030.toInt()
-    private val DARK_BG_RAISED   = 0xFF231540.toInt()
-    private val DARK_TEXT_PRI    = 0xFFF0EEFF.toInt()
-    private val DARK_TEXT_MUTED  = 0xFF9B8EC4.toInt()
-    private val DARK_OUTLINE     = 0xFF3D2B6B.toInt()
+    // ── Dark palette (matches new blue-teal-green brand) ─────────────────────
+    private val DARK_BG_DEEP     = 0xFF071525.toInt()   // deep navy
+    private val DARK_BG_SOFT     = 0xFF0C2035.toInt()   // mid navy
+    private val DARK_BG_RAISED   = 0xFF102840.toInt()   // raised navy
+    private val DARK_TEXT_PRI    = 0xFFE8F4FF.toInt()   // ice white text
+    private val DARK_TEXT_MUTED  = 0xFF6BAED4.toInt()   // muted blue
+    private val DARK_OUTLINE     = 0xFF1A4060.toInt()   // dark teal outline
 
     // ── Shared brand colors ───────────────────────────────────────────────────
-    private val PRIMARY        = 0xFF667EEA.toInt()
-    private val VIOLET         = 0xFF764BA2.toInt()
-    private val PINK           = 0xFFF093FB.toInt()
-    private val RED_ACCENT     = 0xFFF5576C.toInt()
-    private val GREEN_SETTLED  = 0xFF4CAF50.toInt()
-    private val ORANGE_PENDING = 0xFFFF9800.toInt()
+    private val PRIMARY        = 0xFF1A8FD4.toInt()   // mid blue
+    private val PRIMARY_DEEP   = 0xFF1A4FD4.toInt()   // deep blue
+    private val TEAL           = 0xFF1AABCF.toInt()   // teal
+    private val GREEN_BRAND    = 0xFF1DD9A0.toInt()   // green (arrow tip)
+    private val RED_ACCENT     = 0xFFE8445A.toInt()   // red
+    private val GREEN_SETTLED  = 0xFF1DD9A0.toInt()   // settled = brand green
+    private val ORANGE_PENDING = 0xFFF59E0B.toInt()   // amber pending
 
     // ── Active palette — set per generation ──────────────────────────────────
     private var BG_DEEP      = DARK_BG_DEEP
@@ -192,16 +194,16 @@ class StatementGenerator(private val context: Context) {
             val bgPaint = Paint().apply {
                 shader = LinearGradient(
                     0f, 0f, 0f, pageHeight.toFloat(),
-                    intArrayOf(0xFF06030F.toInt(), BG_DEEP, BG_SOFT),
+                    intArrayOf(0xFF020D18.toInt(), DARK_BG_DEEP, DARK_BG_SOFT),
                     floatArrayOf(0f, 0.45f, 1f),
                     Shader.TileMode.CLAMP
                 )
             }
             canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
-            // Subtle glow blobs
-            val glow1 = Paint().apply { color = 0x2E667EEA.toInt() }
-            val glow2 = Paint().apply { color = 0x1EF093FB.toInt() }
-            val glow3 = Paint().apply { color = 0x18764BA2.toInt() }
+            // Subtle blue-teal glow blobs
+            val glow1 = Paint().apply { color = 0x2E1A8FD4.toInt() }  // blue
+            val glow2 = Paint().apply { color = 0x1E1DD9A0.toInt() }  // green
+            val glow3 = Paint().apply { color = 0x181AABCF.toInt() }  // teal
             canvas.drawCircle(pageWidth * 0.18f, pageHeight * 0.10f, 90f, glow1)
             canvas.drawCircle(pageWidth * 0.92f, pageHeight * 0.18f, 75f, glow2)
             canvas.drawCircle(pageWidth * 0.76f, pageHeight * 0.86f, 70f, glow3)
@@ -209,15 +211,15 @@ class StatementGenerator(private val context: Context) {
             val bgPaint = Paint().apply {
                 shader = LinearGradient(
                     0f, 0f, 0f, pageHeight.toFloat(),
-                    intArrayOf(0xFFFFFFFF.toInt(), 0xFFF0EEFF.toInt(), LIGHT_BG_SOFT),
+                    intArrayOf(0xFFFFFFFF.toInt(), 0xFFEAF6FF.toInt(), LIGHT_BG_SOFT),
                     floatArrayOf(0f, 0.5f, 1f),
                     Shader.TileMode.CLAMP
                 )
             }
             canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
-            // Subtle light glow blobs
-            val glow1 = Paint().apply { color = 0x18667EEA.toInt() }
-            val glow2 = Paint().apply { color = 0x10F093FB.toInt() }
+            // Subtle light blue glow blobs
+            val glow1 = Paint().apply { color = 0x181A8FD4.toInt() }  // blue
+            val glow2 = Paint().apply { color = 0x101DD9A0.toInt() }  // green
             canvas.drawCircle(pageWidth * 0.18f, pageHeight * 0.10f, 80f, glow1)
             canvas.drawCircle(pageWidth * 0.88f, pageHeight * 0.15f, 65f, glow2)
         }
@@ -281,98 +283,17 @@ class StatementGenerator(private val context: Context) {
         return (lineY + 50f).toInt()
     }
 
-    // ── Radafiq logo: gradient circle + ر letterform ─────────────────────────
+    // ── Radafiq logo: loads logo.png from assets ──────────────────────────────
     private fun drawRadafiqLogo(canvas: Canvas, x: Float, y: Float, size: Float) {
-        val cx = x + size / 2f
-        val cy = y + size / 2f
-        val r  = size / 2f
+        val bitmap = runCatching {
+            context.assets.open("logo.png").use { stream ->
+                android.graphics.BitmapFactory.decodeStream(stream)
+            }
+        }.getOrNull() ?: return
 
-        // Gradient circle background
-        val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                x, y, x + size, y + size,
-                intArrayOf(PRIMARY, VIOLET),
-                null,
-                Shader.TileMode.CLAMP
-            )
-        }
-        canvas.drawCircle(cx, cy, r, circlePaint)
-
-        // Subtle white border
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style       = Paint.Style.STROKE
-            strokeWidth = 1.2f
-            color       = 0x33FFFFFF.toInt()
-        }
-        canvas.drawCircle(cx, cy, r - 0.8f, borderPaint)
-
-        val strokeW = size * 0.09f
-
-        // ر vertical stem
-        val stemPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style       = Paint.Style.STROKE
-            strokeWidth = strokeW
-            strokeCap   = Paint.Cap.ROUND
-            strokeJoin  = Paint.Join.ROUND
-            color       = 0xFFFFFFFF.toInt()
-        }
-        val stemPath = Path().apply {
-            moveTo(cx - size * 0.04f, cy - size * 0.28f)
-            lineTo(cx - size * 0.04f, cy + size * 0.18f)
-            // bottom curve
-            quadTo(
-                cx - size * 0.04f, cy + size * 0.30f,
-                cx + size * 0.04f, cy + size * 0.32f
-            )
-            quadTo(
-                cx + size * 0.12f, cy + size * 0.30f,
-                cx + size * 0.12f, cy + size * 0.18f
-            )
-            lineTo(cx + size * 0.12f, cy - size * 0.28f)
-        }
-        canvas.drawPath(stemPath, stemPaint)
-
-        // ر left arc
-        val arcPath = Path().apply {
-            moveTo(cx - size * 0.04f, cy - size * 0.28f)
-            quadTo(
-                cx - size * 0.38f, cy - size * 0.32f,
-                cx - size * 0.42f, cy + size * 0.02f
-            )
-            quadTo(
-                cx - size * 0.42f, cy + size * 0.18f,
-                cx - size * 0.16f, cy + size * 0.22f
-            )
-        }
-        canvas.drawPath(arcPath, stemPaint)
-
-        // Pink accent tail
-        val tailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style       = Paint.Style.STROKE
-            strokeWidth = size * 0.07f
-            strokeCap   = Paint.Cap.ROUND
-            shader      = LinearGradient(
-                cx - size * 0.02f, cy + size * 0.22f,
-                cx + size * 0.38f, cy + size * 0.38f,
-                intArrayOf(PINK, RED_ACCENT),
-                null,
-                Shader.TileMode.CLAMP
-            )
-        }
-        val tailPath = Path().apply {
-            moveTo(cx - size * 0.02f, cy + size * 0.22f)
-            quadTo(
-                cx + size * 0.18f, cy + size * 0.30f,
-                cx + size * 0.38f, cy + size * 0.38f
-            )
-        }
-        canvas.drawPath(tailPath, tailPaint)
-
-        // Accent dots
-        val dot1 = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = RED_ACCENT }
-        val dot2 = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCF093FB.toInt() }
-        canvas.drawCircle(cx - size * 0.44f, cy - size * 0.06f, size * 0.045f, dot1)
-        canvas.drawCircle(cx + size * 0.38f, cy + size * 0.40f, size * 0.035f, dot2)
+        val dst = RectF(x, y, x + size, y + size)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        canvas.drawBitmap(bitmap, null, dst, paint)
     }
 
     // ── Summary: 3 metric boxes ───────────────────────────────────────────────
@@ -385,9 +306,9 @@ class StatementGenerator(private val context: Context) {
         bold: Typeface
     ): Int {
         val boxes = listOf(
-            Triple("Total Used",      formatMoney(customer.totalAmount),    PRIMARY),
-            Triple("Customer Paid",   formatMoney(customer.creditDueAmount), 0xFF4CAF50.toInt()),
-            Triple("Balance Due",     formatMoney(customer.balance),         if (customer.balance > 0) RED_ACCENT else 0xFF4CAF50.toInt())
+            Triple("Total Used",    formatMoney(customer.totalAmount),    PRIMARY),
+            Triple("Customer Paid", formatMoney(customer.creditDueAmount), GREEN_BRAND),
+            Triple("Balance Due",   formatMoney(customer.balance),         if (customer.balance > 0) RED_ACCENT else GREEN_BRAND)
         )
         return drawMetricBoxRow(canvas, boxes, pageWidth, startY, regular, bold)
     }
@@ -719,7 +640,7 @@ class StatementGenerator(private val context: Context) {
             val groupPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize = 10f
                 typeface = bold
-                color    = VIOLET
+                color    = TEAL
             }
             canvas.drawText("${first.name.substringBefore(" — EMI")} — ${sorted.size} instalments", 40f, yPos.toFloat(), groupPaint)
             yPos += 14

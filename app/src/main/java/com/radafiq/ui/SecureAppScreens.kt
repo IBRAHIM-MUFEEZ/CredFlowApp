@@ -1,6 +1,5 @@
 package com.radafiq.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,12 +47,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -632,102 +625,15 @@ fun AppLockScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Radafiq logo — purple gradient circle with ر letterform
-            Canvas(
-                modifier = Modifier.size(112.dp)
-            ) {
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                val r = size.minDimension / 2f
-
-                // Background gradient circle
-                drawCircle(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color(0xFF667EEA), Color(0xFF764BA2)),
-                        start = Offset(0f, 0f),
-                        end = Offset(size.width, size.height)
-                    ),
-                    radius = r,
-                    center = Offset(cx, cy)
-                )
-
-                // Subtle border
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.2f),
-                    radius = r - 1.5f,
-                    center = Offset(cx, cy),
-                    style = Stroke(width = 1.5f)
-                )
-
-                val stroke = Stroke(
-                    width = size.width * 0.09f,
-                    cap = StrokeCap.Round,
-                    join = StrokeJoin.Round
-                )
-
-                // ر vertical stem
-                val stemPath = Path().apply {
-                    moveTo(cx - size.width * 0.04f, cy - size.height * 0.28f)
-                    lineTo(cx - size.width * 0.04f, cy + size.height * 0.18f)
-                    quadraticBezierTo(
-                        cx - size.width * 0.04f, cy + size.height * 0.30f,
-                        cx + size.width * 0.04f, cy + size.height * 0.32f
-                    )
-                    quadraticBezierTo(
-                        cx + size.width * 0.12f, cy + size.height * 0.30f,
-                        cx + size.width * 0.12f, cy + size.height * 0.18f
-                    )
-                    lineTo(cx + size.width * 0.12f, cy - size.height * 0.28f)
-                }
-                drawPath(stemPath, color = Color.White, style = stroke)
-
-                // ر left arc
-                val arcPath = Path().apply {
-                    moveTo(cx - size.width * 0.04f, cy - size.height * 0.28f)
-                    quadraticBezierTo(
-                        cx - size.width * 0.38f, cy - size.height * 0.32f,
-                        cx - size.width * 0.42f, cy + size.height * 0.02f
-                    )
-                    quadraticBezierTo(
-                        cx - size.width * 0.42f, cy + size.height * 0.18f,
-                        cx - size.width * 0.16f, cy + size.height * 0.22f
-                    )
-                }
-                drawPath(arcPath, color = Color.White, style = stroke)
-
-                // Pink accent tail
-                val tailStroke = Stroke(width = size.width * 0.07f, cap = StrokeCap.Round)
-                val tailPath = Path().apply {
-                    moveTo(cx - size.width * 0.02f, cy + size.height * 0.22f)
-                    quadraticBezierTo(
-                        cx + size.width * 0.18f, cy + size.height * 0.30f,
-                        cx + size.width * 0.38f, cy + size.height * 0.38f
-                    )
-                }
-                drawPath(
-                    tailPath,
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color(0xFFF093FB), Color(0xFFF5576C)),
-                        start = Offset(cx, cy + size.height * 0.22f),
-                        end = Offset(cx + size.width * 0.38f, cy + size.height * 0.38f)
-                    ),
-                    style = tailStroke
-                )
-
-                // Accent dot left
-                drawCircle(
-                    color = Color(0xFFF5576C),
-                    radius = size.width * 0.045f,
-                    center = Offset(cx - size.width * 0.44f, cy - size.height * 0.06f)
-                )
-
-                // Accent dot right
-                drawCircle(
-                    color = Color(0xFFF093FB).copy(alpha = 0.8f),
-                    radius = size.width * 0.035f,
-                    center = Offset(cx + size.width * 0.38f, cy + size.height * 0.40f)
-                )
-            }
+            // Radafiq logo from assets
+            coil.compose.AsyncImage(
+                model = "file:///android_asset/logo.png",
+                contentDescription = "Radafiq Logo",
+                modifier = Modifier
+                    .size(112.dp)
+                    .clip(CircleShape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 

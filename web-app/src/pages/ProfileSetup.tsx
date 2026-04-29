@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import RadafiqLogo from '../components/RadafiqLogo';
 
@@ -9,6 +9,15 @@ export default function ProfileSetup() {
   const [email, setEmail] = useState(profile?.email ?? user?.email ?? '');
   const [saving, setSaving] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+
+  // BUG-29 fix: sync form fields when profile loads after mount (e.g. after Google sign-in)
+  useEffect(() => {
+    if (profile) {
+      setDisplayName(profile.displayName);
+      setBusinessName(profile.businessName);
+      setEmail(profile.email);
+    }
+  }, [profile]);
 
   const handleSave = async () => {
     if (!displayName.trim() || !businessName.trim()) return;
@@ -24,8 +33,8 @@ export default function ProfileSetup() {
     setSigningIn(true);
     try {
       await signInWithGoogle();
-    } catch {
-      // handled by auth state
+    } catch (e) {
+      // Popup blocked or user cancelled — silently reset
     } finally {
       setSigningIn(false);
     }
@@ -128,7 +137,7 @@ export default function ProfileSetup() {
             <button
               className="btn btn-primary btn-full btn-lg"
               onClick={handleSave}
-              disabled={saving || !displayName.trim() || !businessName.trim()}
+              disabled={saving || !displayName.trim() || !businessName.trim() || !user}
             >
               {saving ? 'Saving...' : 'Save Profile'}
             </button>

@@ -129,6 +129,7 @@ interface AppContextValue {
     customerName: string;
     accountId: string;
     accountName: string;
+    accountKind?: AccountKind;
     totalAmount: number;
     transactionDate: string;
     months: number;
@@ -435,6 +436,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     customerName: string;
     accountId: string;
     accountName: string;
+    accountKind?: AccountKind;
     totalAmount: number;
     transactionDate: string;
     months: number;
@@ -464,7 +466,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         transactionName: `${params.transactionName.trim()} — EMI ${i + 1}/${params.months}`,
         accountId: params.accountId,
         accountName: params.accountName,
-        accountType: 'credit_card',
+        accountType: params.accountKind ?? 'credit_card', // BUG-13 fix: use actual kind
         customerName: params.customerName.trim(),
         amount: emiAmount,
         transactionDate: emiDate.toISOString().split('T')[0],
@@ -645,19 +647,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const payload = backupFromJson(json);
       await repo.restoreBackup(user.uid, payload);
 
-      // Restore settings
-      const appSettings = payload.settings?.app as Record<string, unknown> | undefined;
-      if (appSettings) {
-        updateSettings(s => ({
+      // BUG-17 fix: merge both settings updates into a single call
+      updateSettings(s => {
+        const appSettings = payload.settings?.app as Record<string, unknown> | undefined;
+        return {
           ...s,
-          themeMode: (appSettings.themeMode as 'LIGHT' | 'DARK') ?? s.themeMode,
-          selectedAccountIds: appSettings.selectedAccountIds
+          themeMode: (appSettings?.themeMode as 'LIGHT' | 'DARK') ?? s.themeMode,
+          selectedAccountIds: appSettings?.selectedAccountIds
             ? new Set(appSettings.selectedAccountIds as string[])
             : s.selectedAccountIds,
-        }));
-      }
-
-      updateSettings(s => ({ ...s, lastDriveRestoreTime: currentTimestampLabel() }));
+          lastDriveRestoreTime: currentTimestampLabel(),
+        };
+      });
       setBackupStatusMessage('Backup restored successfully.');
     } catch (e: unknown) {
       setBackupStatusMessage(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
@@ -678,6 +679,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSyncStatus({ state: 'IDLE', message: '' });
       }, 4000);
     }, 1500);
+  }, []);
+
+  // BUG-12 fix: cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (syncResetTimerRef.current) clearTimeout(syncResetTimerRef.current);
+    };
   }, []);
 
   // ── Context value ─────────────────────────────────────────────────────────

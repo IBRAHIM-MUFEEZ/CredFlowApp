@@ -111,7 +111,14 @@ export default function EmiSchedulePage() {
               </div>
 
               {rows.map(row => {
-                const statusColor = row.isSettled ? 'var(--green)' : row.isCurrent ? 'var(--primary)' : row.isPast ? 'var(--warning)' : 'var(--text-muted)';
+                // BUG-54 fix: current-month items should show primary, not warning (overdue)
+                const statusColor = row.isSettled
+                  ? 'var(--green)'
+                  : row.isCurrent
+                  ? 'var(--primary)'
+                  : row.isPast
+                  ? 'var(--warning)'
+                  : 'var(--text-muted)';
                 return (
                   <div key={row.transactionId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.5rem 0', borderBottom: '1px solid var(--outline)' }}>
                     <div style={{
@@ -136,7 +143,7 @@ export default function EmiSchedulePage() {
                     <button
                       className="btn btn-ghost btn-sm"
                       style={{ color: row.isSettled ? 'var(--green)' : 'var(--text-muted)', padding: '4px 8px' }}
-                      onClick={() => toggleTransactionSettled(row.transactionId, !row.isSettled)}
+                      onClick={async () => await toggleTransactionSettled(row.transactionId, !row.isSettled)}
                       title={row.isSettled ? 'Mark unsettled' : 'Mark settled'}
                     >
                       {row.isSettled ? '✓' : '○'}

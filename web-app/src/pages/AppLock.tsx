@@ -205,6 +205,7 @@ export default function AppLock() {
               <button
                 key={i}
                 type="button"
+                aria-label={isBack ? 'Backspace' : `Digit ${key}`}
                 style={numpadBtn(disabled, isBack)}
                 onClick={() => {
                   if (disabled) return;
