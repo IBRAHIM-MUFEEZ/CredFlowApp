@@ -59,7 +59,7 @@ class UserProfileRepository(
         }
     }
 
-    suspend fun signOut() {
+    fun signOut() {
         // Identity reset is handled by LocalIdentityRepository.resetIdentity() in MainActivity.
         // Stop the current Firestore listener so we don't receive stale data after logout.
         registration?.remove()

@@ -33,9 +33,9 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Divider
@@ -66,7 +66,6 @@ import androidx.navigation.NavController
 import com.radafiq.data.models.AccountKind
 import com.radafiq.data.models.CardSummary
 import com.radafiq.data.models.CustomerSummary
-import com.radafiq.data.models.CustomerTransaction
 import com.radafiq.viewmodel.MainViewModel
 import java.time.LocalDate
 import java.time.LocalTime
@@ -154,6 +153,7 @@ fun DashboardScreen(
                 when (tab) {
                     DashboardTab.HOME -> HomeScreen(
                         cards = visibleCards,
+                        customers = customers,
                         profileName = profileName,
                         driveOperationMessage = driveOperationMessage,
                         modifier = Modifier.padding(padding),
@@ -249,9 +249,18 @@ private fun DashboardBottomBar(
     }
 }
 
+// Lightweight summary for a person (aggregated from customer transactions)
+private data class PersonSummary(
+    val personId: String,
+    val personName: String,
+    val totalUsed: Double,
+    val totalDue: Double
+)
+
 @Composable
 fun HomeScreen(
     cards: List<CardSummary>,
+    customers: List<CustomerSummary>,
     profileName: String,
     driveOperationMessage: String?,
     modifier: Modifier = Modifier,
@@ -260,13 +269,46 @@ fun HomeScreen(
     val totalUsed = cards.sumOf { it.bill }
     val totalPaid = cards.sumOf { it.pending }
     val totalBalance = cards.sumOf { it.payable }
-    val availableKinds = remember(cards) { cards.map { it.accountKind }.distinct() }
+
+    // Aggregate person transactions across all customers
+    val personSummaries = remember(customers) {
+        val map = linkedMapOf<String, Triple<String, Double, Double>>() // id -> (name, used, due)
+        customers.forEach { customer ->
+            customer.transactions
+                .filter { it.accountKind == AccountKind.PERSON && it.isVisibleInTransactions() }
+                .forEach { txn ->
+                    val key = txn.accountId
+                    val name = txn.personName.ifBlank { txn.accountName }
+                    val used = txn.amount
+                    val due = if (txn.isSettled) 0.0 else (txn.amount - txn.partialPaidAmount).coerceAtLeast(0.0)
+                    val existing = map[key]
+                    if (existing == null) {
+                        map[key] = Triple(name, used, due)
+                    } else {
+                        map[key] = Triple(existing.first, existing.second + used, existing.third + due)
+                    }
+                }
+        }
+        map.entries.map { (id, v) -> PersonSummary(id, v.first, v.second, v.third) }
+            .sortedByDescending { it.totalDue }
+    }
+
+    val availableKinds = remember(cards, personSummaries) {
+        val kinds = cards.map { it.accountKind }.toMutableList()
+        if (personSummaries.isNotEmpty() && AccountKind.PERSON !in kinds) kinds.add(AccountKind.PERSON)
+        kinds.distinct()
+    }
     var selectedActivityKindName by rememberSaveable { mutableStateOf("ALL") }
     var isFilterOpen by rememberSaveable { mutableStateOf(false) }
 
     val activityCards = when (selectedActivityKindName) {
         "ALL" -> cards
+        AccountKind.PERSON.name -> emptyList()
         else -> cards.filter { it.accountKind.name == selectedActivityKindName }
+    }
+    val activityPersons = when (selectedActivityKindName) {
+        "ALL", AccountKind.PERSON.name -> personSummaries
+        else -> emptyList()
     }
 
     LazyColumn(
@@ -326,7 +368,7 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Styled from the supplied design, adapted to your account data.",
+                            text = "Live summary of your accounts and person balances.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 2.dp)
@@ -391,7 +433,7 @@ fun HomeScreen(
             )
         }
 
-        if (activityCards.isEmpty()) {
+        if (activityCards.isEmpty() && activityPersons.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier
@@ -408,6 +450,9 @@ fun HomeScreen(
         } else {
             items(activityCards.sortedByDescending { it.payable }.take(6), key = { it.id }) { card ->
                 HomeActivityCard(card = card)
+            }
+            items(activityPersons.take(6), key = { "person_${it.personId}" }) { person ->
+                HomePersonCard(person = person)
             }
         }
     }
@@ -581,27 +626,97 @@ private fun HomeActivityCard(card: CardSummary) {
     }
 }
 
+@Composable
+private fun HomePersonCard(person: PersonSummary) {
+    val personAccent = MaterialTheme.colorScheme.primary
+
+    FlowCard(accentColor = personAccent) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(personAccent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val initials = person.personName
+                        .trim()
+                        .split(Regex("\\s+"))
+                        .filter { it.isNotBlank() }
+                        .take(2)
+                        .joinToString("") { it.first().uppercaseChar().toString() }
+                        .ifBlank { "P" }
+                    Text(
+                        text = initials,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = personAccent
+                    )
+                }
+                Column(modifier = Modifier.padding(start = 12.dp)) {
+                    Text(
+                        text = person.personName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Person • Used ${formatMoney(person.totalUsed)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatMoney(person.totalDue),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (person.totalDue > 0.0) warningColor() else personAccent
+                )
+                Text(
+                    text = if (person.totalDue > 0.0) "Due" else "Settled",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 // ── EMI Schedule Tab ─────────────────────────────────────────────────────────
 
 private data class EmiGroupRow(
     val groupId: String,
+    val transactionId: String,   // Firestore doc id for this instalment
     val customerName: String,
     val planName: String,
     val accountName: String,
-    val emiIndex: Int,       // 0-based
+    val emiIndex: Int,
     val emiTotal: Int,
     val amount: Double,
     val transactionDate: String,
     val dueDate: String,
     val isSettled: Boolean,
-    val isPast: Boolean,     // date <= today (already in transactions)
-    val isCurrent: Boolean   // date == today's month
+    val isPast: Boolean,
+    val isCurrent: Boolean
 )
 
 @Composable
 fun EmiScheduleScreen(
     customers: List<CustomerSummary>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    vm: MainViewModel = viewModel()
 ) {
     val today = remember { LocalDate.now() }
 
@@ -633,6 +748,7 @@ fun EmiScheduleScreen(
                     result.add(
                         EmiGroupRow(
                             groupId = groupKey,
+                            transactionId = t.id,
                             customerName = customer.name,
                             planName = planName,
                             accountName = t.accountName,
@@ -756,7 +872,8 @@ fun EmiScheduleScreen(
                     groupPaid = groupPaid,
                     groupPending = groupPending,
                     groupUpcoming = groupUpcoming,
-                    today = today
+                    today = today,
+                    onDeleteGroup = { rows.forEach { vm.deleteTransaction(it.transactionId) } }
                 )
             }
         }
@@ -773,11 +890,12 @@ private fun EmiAmortizationCard(
     groupPaid: Double,
     groupPending: Double,
     groupUpcoming: Double,
-    today: LocalDate
+    today: LocalDate,
+    onDeleteGroup: () -> Unit
 ) {
-    // Key by groupId so each card's expanded state is independent and survives recomposition
     val groupId = rows.firstOrNull()?.groupId ?: planName
     var expanded by rememberSaveable(groupId) { mutableStateOf(true) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val progress = if (groupTotal > 0) ((groupPaid + groupPending) / groupTotal).toFloat().coerceIn(0f, 1f) else 0f
     val completedCount = rows.count { it.isPast }
     val totalCount = rows.size
@@ -815,18 +933,33 @@ private fun EmiAmortizationCard(
                         modifier = Modifier.padding(top = 1.dp)
                     )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = formatMoney(groupTotal),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$completedCount / $totalCount done",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
+                Row(verticalAlignment = Alignment.Top) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = formatMoney(groupTotal),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$completedCount / $totalCount done",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete EMI plan",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 
@@ -902,6 +1035,33 @@ private fun EmiAmortizationCard(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete EMI plan?") },
+            text = {
+                Text(
+                    "This will permanently delete all ${rows.size} instalments of \"$planName\" for $customerName. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onDeleteGroup()
+                        showDeleteConfirm = false
+                    }
+                ) {
+                    Text("Delete all", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

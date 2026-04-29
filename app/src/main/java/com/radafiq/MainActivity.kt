@@ -40,6 +40,7 @@ import com.radafiq.data.backup.BackupJsonSerializer
 import com.radafiq.data.backup.DriveBackupRepository
 import com.radafiq.data.backup.FileBackupRepository
 import com.radafiq.data.models.CardSummary
+import com.radafiq.data.models.hasLedgerActivity
 import com.radafiq.data.profile.UserProfileRepository
 import com.radafiq.data.security.AppSecurityRepository
 import com.radafiq.data.settings.AppSettingsRepository
@@ -128,7 +129,6 @@ class MainActivity : FragmentActivity() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            profileGoogleSignInInProgress = false
             try {
                 val account = task.getResult(ApiException::class.java)
                 val name = account.displayName.orEmpty()
@@ -136,6 +136,7 @@ class MainActivity : FragmentActivity() {
                 val photo = account.photoUrl?.toString().orEmpty()
                 if (email.isNotBlank()) {
                     loginRestoreInProgress = true
+                    profileGoogleSignInInProgress = false
                     coroutineScope.launch {
                         // 1. Sign into Firebase Auth — get real UID
                         val firebaseUid = GoogleSignInHelper.signInToFirebase(account)
@@ -172,6 +173,7 @@ class MainActivity : FragmentActivity() {
                         loginRestoreInProgress = false
                     }
                 } else {
+                    profileGoogleSignInInProgress = false
                     pendingProfileCallback = null
                 }
             } catch (e: ApiException) {
@@ -607,9 +609,14 @@ class MainActivity : FragmentActivity() {
                         }
 
                         composable("addTransaction") {
-                            AddTransactionScreen {
-                                navController.popBackStack()
-                            }
+                            AddTransactionScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onCustomerAdded = { customerId ->
+                                    navController.navigate("customerDetail/$customerId") {
+                                        popUpTo("addTransaction") { inclusive = true }
+                                    }
+                                }
+                            )
                         }
 
                         composable("addPayment") {
@@ -800,12 +807,4 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private fun CardSummary.hasLedgerActivity(): Boolean {
-    return bill > 0.0 ||
-        pending > 0.0 ||
-        dueAmount > 0.0 ||
-        dueDate.isNotBlank() ||
-        remindersEnabled ||
-        reminderEmail.isNotBlank() ||
-        reminderWhatsApp.isNotBlank()
-}
+// hasLedgerActivity is defined as an extension on CardSummary in Models.kt

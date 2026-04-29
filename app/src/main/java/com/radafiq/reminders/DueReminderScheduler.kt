@@ -28,7 +28,7 @@ class DueReminderScheduler(
         val startDate = parsedDueDate.minusDays(5)
 
         generateSequence(startDate) { current ->
-            if (current.isBefore(parsedDueDate)) current.plusDays(1) else null
+            if (!current.isAfter(parsedDueDate)) current.plusDays(1) else null
         }.forEach { reminderDate ->
             val reminderTime = reminderDate.atTime(9, 0)
             if (reminderTime.isBefore(now)) return@forEach

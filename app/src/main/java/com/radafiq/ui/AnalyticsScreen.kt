@@ -315,7 +315,7 @@ private fun CustomerAnalyticsCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${selectedCustomer.transactions.size} transaction(s)",
+                text = "${selectedCustomer.transactions.countLogicalTransactions()} transaction(s)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)

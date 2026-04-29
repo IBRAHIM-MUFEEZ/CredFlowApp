@@ -11,6 +11,7 @@ import com.radafiq.data.models.AppData
 import com.radafiq.data.models.CardSummary
 import com.radafiq.data.models.CustomerSummary
 import com.radafiq.data.models.FirestoreBackupPayload
+import com.radafiq.data.models.SplitEntry
 import com.radafiq.data.profile.UserProfileRepository
 import com.radafiq.data.repository.FirebaseRepository
 import com.radafiq.data.security.AppSecurityRepository
@@ -24,6 +25,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** Persists in-progress transaction form state across lock/unlock cycles. */
+data class DraftTransactionState(
+    val customerId: String = "",
+    val transactionName: String = "",
+    val selectedKindName: String = "",       // AccountKind.name
+    val selectedAccountId: String = "",
+    val personName: String = "",
+    val amountExpression: String = "",
+    val transactionDate: String = "",
+    val splitEnabled: Boolean = false,
+    val splitEntries: List<SplitEntry> = listOf(SplitEntry(), SplitEntry()),
+    val emiEnabled: Boolean = false,
+    val emiMonths: String = "",
+    val emiFirstMonthOverride: String = "",
+    val emiManualDates: Boolean = false,
+    val emiDateOverrides: Map<Int, String> = emptyMap()
+) {
+    val isEmpty: Boolean get() = customerId.isBlank() && transactionName.isBlank() && amountExpression.isBlank() && transactionDate.isBlank()
+}
 
 class MainViewModel(
     private var repository: FirebaseRepository = FirebaseRepository()
@@ -40,6 +61,18 @@ class MainViewModel(
 
     private val _driveOperationMessage = MutableStateFlow<String?>(null)
     val driveOperationMessage: StateFlow<String?> = _driveOperationMessage.asStateFlow()
+
+    // In-progress transaction form draft — survives lock/unlock
+    private val _draftTransaction = MutableStateFlow(DraftTransactionState())
+    val draftTransaction: StateFlow<DraftTransactionState> = _draftTransaction.asStateFlow()
+
+    fun saveDraftTransaction(draft: DraftTransactionState) {
+        _draftTransaction.value = draft
+    }
+
+    fun clearDraftTransaction() {
+        _draftTransaction.value = DraftTransactionState()
+    }
 
     // Sync status for the customers tab sync button
     enum class SyncState { IDLE, SYNCING, SUCCESS, ERROR }
@@ -100,6 +133,7 @@ class MainViewModel(
         _customers.value = emptyList()
         _deletedCustomers.value = emptyList()
         _driveOperationMessage.value = null
+        _draftTransaction.value = DraftTransactionState()
         repository = FirebaseRepository()
         startListening()
     }
@@ -110,21 +144,24 @@ class MainViewModel(
     }
 
     private fun handleObservedAppData(appData: AppData) {
-        _cards.value = appData.accounts
-        _customers.value = appData.customers
-        _deletedCustomers.value = appData.deletedCustomers
-
         // Skip the very first snapshot (initial load — not a user change)
         if (!hasObservedInitialSnapshot) {
             hasObservedInitialSnapshot = true
+            _cards.value = appData.accounts
+            _customers.value = appData.customers
+            _deletedCustomers.value = appData.deletedCustomers
             return
         }
 
-        // Skip snapshots echoed back from our own restore writes
+        // Skip snapshots echoed back from our own restore writes — do NOT update data
         if (snapshotsToSkip > 0) {
             snapshotsToSkip--
             return
         }
+
+        _cards.value = appData.accounts
+        _customers.value = appData.customers
+        _deletedCustomers.value = appData.deletedCustomers
 
         // Every subsequent snapshot is a real data change — schedule backup
         scheduleAutoBackup()
@@ -298,10 +335,13 @@ class MainViewModel(
         return LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))
     }
 
-    fun addCustomer(name: String) {
+    fun addCustomer(name: String, onCreated: (customerId: String) -> Unit = {}) {
         val trimmedName = name.trim()
         if (trimmedName.isBlank()) return
-        viewModelScope.launch { repository.addCustomer(trimmedName) }
+        viewModelScope.launch {
+            val id = repository.addCustomer(trimmedName)
+            onCreated(id)
+        }
     }
 
     fun deleteCustomer(customerId: String, customerName: String) {
@@ -362,7 +402,8 @@ class MainViewModel(
         accountName: String,
         accountKind: AccountKind,
         amount: String,
-        transactionDate: String
+        transactionDate: String,
+        personName: String = ""
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
         viewModelScope.launch {
@@ -374,7 +415,8 @@ class MainViewModel(
                 accountKind = accountKind,
                 customerName = customerName.trim(),
                 amount = parsedAmount,
-                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() }
+                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() },
+                personName = personName.trim()
             )
         }
     }
@@ -393,7 +435,9 @@ class MainViewModel(
     ) {
         if (months <= 0 || totalAmount <= 0.0) return
         val baseDate = runCatching { LocalDate.parse(transactionDate) }.getOrDefault(LocalDate.now())
+        // baseEmi = totalAmount / months — this is what months 2..N always use
         val baseEmi = totalAmount / months
+        // First month is independent: use override if provided, otherwise same as baseEmi
         val firstEmi = firstMonthOverride?.takeIf { it > 0.0 } ?: baseEmi
         val groupId = java.util.UUID.randomUUID().toString()
         viewModelScope.launch {
@@ -430,7 +474,8 @@ class MainViewModel(
         accountName: String,
         accountKind: AccountKind,
         amount: String,
-        transactionDate: String
+        transactionDate: String,
+        personName: String = ""
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
         viewModelScope.launch {
@@ -441,7 +486,8 @@ class MainViewModel(
                 accountName = accountName,
                 accountKind = accountKind,
                 amount = parsedAmount,
-                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() }
+                transactionDate = transactionDate.ifBlank { LocalDate.now().toString() },
+                personName = personName.trim()
             )
         }
     }
@@ -469,6 +515,48 @@ class MainViewModel(
                 isSettled = isSettled,
                 settledDate = if (isSettled) LocalDate.now().toString() else ""
             )
+        }
+    }
+
+    fun addSplitTransactions(
+        customerId: String,
+        customerName: String,
+        transactionName: String,
+        transactionDate: String,
+        splits: List<SplitEntry>
+    ) {
+        if (splits.isEmpty()) return
+        val groupId = java.util.UUID.randomUUID().toString()
+        viewModelScope.launch {
+            val docs = splits.mapNotNull { split ->
+                val amount = split.amount.toDoubleOrNull() ?: return@mapNotNull null
+                if (amount <= 0.0) return@mapNotNull null
+                val isPerson = split.accountKind == com.radafiq.data.models.AccountKind.PERSON
+                // Use accountName as fallback id for non-person entries where id may be blank
+                val accountId = when {
+                    isPerson -> "person_${split.personName.trim().lowercase().replace(" ", "_")}"
+                    split.accountId.isNotBlank() -> split.accountId
+                    split.accountName.isNotBlank() -> split.accountName.trim().lowercase().replace(" ", "_")
+                    else -> return@mapNotNull null  // no usable account — skip
+                }
+                val accountName = if (isPerson) split.personName.trim() else split.accountName.trim()
+                if (accountName.isBlank()) return@mapNotNull null
+                mutableMapOf<String, Any>(
+                    "customerId"      to customerId,
+                    "customerName"    to customerName,
+                    "transactionName" to transactionName,
+                    "accountId"       to accountId,
+                    "accountName"     to accountName,
+                    "accountType"     to split.accountKind.storageValue,
+                    "amount"          to amount,
+                    "transactionDate" to transactionDate.ifBlank { LocalDate.now().toString() },
+                    "givenDate"       to transactionDate.ifBlank { LocalDate.now().toString() },
+                    "splitGroupId"    to groupId
+                ).also { data ->
+                    if (isPerson && split.personName.isNotBlank()) data["personName"] = split.personName.trim()
+                }
+            }
+            if (docs.isNotEmpty()) repository.addSplitTransactionsBatch(docs)
         }
     }
 

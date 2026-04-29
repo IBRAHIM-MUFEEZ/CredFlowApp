@@ -64,6 +64,27 @@ fun AccountsScreen(
 ) {
     val creditCards = cards.filter { it.accountKind == AccountKind.CREDIT_CARD }
     val bankAccounts = cards.filter { it.accountKind == AccountKind.BANK_ACCOUNT }
+    val customers by vm.customers.collectAsState()
+
+    // Aggregate person transactions for the Accounts tab
+    data class PersonEntry(val accountId: String, val name: String, val used: Double, val due: Double)
+    val personCards = remember(customers) {
+        val map = linkedMapOf<String, PersonEntry>()
+        customers.forEach { customer ->
+            customer.transactions
+                .filter { it.accountKind == AccountKind.PERSON && it.isVisibleInTransactions() }
+                .forEach { txn ->
+                    val key = txn.accountId
+                    val name = txn.personName.ifBlank { txn.accountName }
+                    val used = txn.amount
+                    val due = if (txn.isSettled) 0.0 else (txn.amount - txn.partialPaidAmount).coerceAtLeast(0.0)
+                    val existing = map[key]
+                    map[key] = if (existing == null) PersonEntry(key, name, used, due)
+                               else existing.copy(used = existing.used + used, due = existing.due + due)
+                }
+        }
+        map.values.sortedByDescending { it.due }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -126,6 +147,16 @@ fun AccountsScreen(
                     AccountListRow(card = card, onClick = { onOpenAccount(card.id) })
                 }
             }
+
+            if (personCards.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    AccountSectionTitle("Persons")
+                }
+                items(personCards, key = { "person_${it.accountId}" }) { entry ->
+                    PersonAccountRow(name = entry.name, usedAmount = entry.used, dueAmount = entry.due)
+                }
+            }
         }
     }
 }
@@ -185,6 +216,51 @@ fun AccountSectionTitle(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun PersonAccountRow(
+    name: String,
+    usedAmount: Double,
+    dueAmount: Double
+) {
+    val accent = accountAccent(AccountKind.PERSON)
+    FlowCard(accentColor = accent) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Person • Used ${formatMoney(usedAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatMoney(dueAmount),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (dueAmount > 0.0) warningColor() else accent
+                )
+                Text(
+                    text = if (dueAmount > 0.0) "Due" else "Settled",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
 
 @Composable

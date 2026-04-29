@@ -35,7 +35,8 @@ import com.radafiq.viewmodel.MainViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTransactionScreen(
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    onCustomerAdded: (customerId: String) -> Unit = {}
 ) {
     val vm: MainViewModel = viewModel()
     var customerName by remember { mutableStateOf("") }
@@ -88,8 +89,9 @@ fun AddTransactionScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            vm.addCustomer(customerName)
-                            onNavigateBack()
+                            vm.addCustomer(customerName) { customerId ->
+                                onCustomerAdded(customerId)
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()

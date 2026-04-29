@@ -45,13 +45,17 @@ class DriveBackupRepository {
                 contentType = "multipart/related; boundary=$boundary"
             )
 
-            connection.outputStream.use { output ->
-                OutputStreamWriter(output).use { writer ->
-                    writer.write(requestBody)
+            try {
+                connection.outputStream.use { output ->
+                    OutputStreamWriter(output, Charsets.UTF_8).use { writer ->
+                        writer.write(requestBody)
+                        writer.flush()
+                    }
                 }
+                ensureSuccess(connection)
+            } finally {
+                connection.disconnect()
             }
-
-            ensureSuccess(connection)
         }
     }
 
@@ -66,8 +70,12 @@ class DriveBackupRepository {
                 method = "GET"
             )
 
-            ensureSuccess(connection)
-            connection.inputStream.bufferedReader().use(BufferedReader::readText)
+            try {
+                ensureSuccess(connection)
+                connection.inputStream.bufferedReader().use(BufferedReader::readText)
+            } finally {
+                connection.disconnect()
+            }
         }
     }
 
@@ -76,39 +84,47 @@ class DriveBackupRepository {
         val url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q=$query"
         val connection = openConnection(url = url, accessToken = accessToken, method = "GET")
 
-        ensureSuccess(connection)
-        val response = connection.inputStream.bufferedReader().use(BufferedReader::readText)
-        val files = JSONObject(response).optJSONArray("files") ?: JSONArray()
-        if (files.length() == 0) return null
+        try {
+            ensureSuccess(connection)
+            val response = connection.inputStream.bufferedReader().use(BufferedReader::readText)
+            val files = JSONObject(response).optJSONArray("files") ?: JSONArray()
+            if (files.length() == 0) return null
 
-        // Find the latest file
-        var latestId: String? = null
-        var latestModified = ""
-        val allIds = mutableListOf<String>()
-        for (index in 0 until files.length()) {
-            val file = files.getJSONObject(index)
-            val id = file.optString("id")
-            val modifiedTime = file.optString("modifiedTime")
-            allIds.add(id)
-            if (latestId == null || modifiedTime > latestModified) {
-                latestId = id
-                latestModified = modifiedTime
+            // Find the latest file
+            var latestId: String? = null
+            var latestModified = ""
+            val allIds = mutableListOf<String>()
+            for (index in 0 until files.length()) {
+                val file = files.getJSONObject(index)
+                val id = file.optString("id")
+                val modifiedTime = file.optString("modifiedTime")
+                allIds.add(id)
+                if (latestId == null || modifiedTime > latestModified) {
+                    latestId = id
+                    latestModified = modifiedTime
+                }
             }
-        }
 
-        // Delete any duplicate files (keep only the latest)
-        allIds.filter { it != latestId }.forEach { duplicateId ->
-            runCatching {
-                val deleteConn = openConnection(
-                    url = "https://www.googleapis.com/drive/v3/files/$duplicateId",
-                    accessToken = accessToken,
-                    method = "DELETE"
-                )
-                deleteConn.responseCode // trigger the request
+            // Delete any duplicate files (keep only the latest)
+            allIds.filter { it != latestId }.forEach { duplicateId ->
+                runCatching {
+                    val deleteConn = openConnection(
+                        url = "https://www.googleapis.com/drive/v3/files/$duplicateId",
+                        accessToken = accessToken,
+                        method = "DELETE"
+                    )
+                    try {
+                        deleteConn.responseCode // trigger the request
+                    } finally {
+                        deleteConn.disconnect()
+                    }
+                }
             }
-        }
 
-        return latestId
+            return latestId
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun openConnection(

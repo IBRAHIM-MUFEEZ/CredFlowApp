@@ -25,14 +25,14 @@ import kotlinx.coroutines.tasks.await
 class FirebaseRepository(
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    suspend fun addCustomer(name: String) {
+    suspend fun addCustomer(name: String): String {
         val data = hashMapOf(
             "name" to name,
             "creditDueAmount" to 0.0,
             "isDeleted" to false
         )
-
-        customersCollection().add(data).await()
+        val ref = customersCollection().add(data).await()
+        return ref.id
     }
 
     suspend fun deleteCustomer(
@@ -165,6 +165,8 @@ class FirebaseRepository(
         customerName: String,
         amount: Double,
         transactionDate: String,
+        personName: String = "",
+        splitGroupId: String = "",
         dueDate: String = "",
         emiGroupId: String = "",
         emiIndex: Int = 0,
@@ -181,6 +183,8 @@ class FirebaseRepository(
             "transactionDate" to transactionDate,
             "givenDate" to transactionDate
         )
+        if (personName.isNotBlank()) data["personName"] = personName
+        if (splitGroupId.isNotBlank()) data["splitGroupId"] = splitGroupId
         if (dueDate.isNotBlank()) data["dueDate"] = dueDate
         if (emiGroupId.isNotBlank()) {
             data["emiGroupId"] = emiGroupId
@@ -188,6 +192,14 @@ class FirebaseRepository(
             data["emiTotal"] = emiTotal
         }
         transactionsCollection().add(data).await()
+    }
+
+    suspend fun addSplitTransactionsBatch(splits: List<Map<String, Any>>) {
+        val batch = db.batch()
+        splits.forEach { data ->
+            batch.set(transactionsCollection().document(), data)
+        }
+        batch.commit().await()
     }
 
     suspend fun addEmiTransactionsBatch(instalments: List<Map<String, Any>>) {
@@ -207,9 +219,10 @@ class FirebaseRepository(
         accountName: String,
         accountKind: AccountKind,
         amount: Double,
-        transactionDate: String
+        transactionDate: String,
+        personName: String = ""
     ) {
-        val data = mutableMapOf<String, Any>(
+        val data = mutableMapOf<String, Any?>(
             "transactionName" to transactionName,
             "accountId" to accountId,
             "accountName" to accountName,
@@ -219,10 +232,13 @@ class FirebaseRepository(
             "givenDate" to transactionDate,
             "dueDate" to FieldValue.delete()
         )
+        if (personName.isNotBlank()) data["personName"] = personName
+        else data["personName"] = FieldValue.delete()
 
+        @Suppress("UNCHECKED_CAST")
         transactionsCollection()
             .document(transactionId)
-            .set(data, SetOptions.merge())
+            .set(data as Map<String, Any>, SetOptions.merge())
             .await()
     }
 
@@ -416,7 +432,9 @@ class FirebaseRepository(
                     "partialPaidAmount" to (document.getDouble("partialPaidAmount") ?: 0.0),
                     "emiGroupId" to document.getString("emiGroupId").orEmpty(),
                     "emiIndex" to (document.getLong("emiIndex") ?: 0L),
-                    "emiTotal" to (document.getLong("emiTotal") ?: 0L)
+                    "emiTotal" to (document.getLong("emiTotal") ?: 0L),
+                    "personName" to document.getString("personName").orEmpty(),
+                    "splitGroupId" to document.getString("splitGroupId").orEmpty()
                 )
             )
         }
@@ -566,7 +584,7 @@ class FirebaseRepository(
                     accountKind = accountKind
                 )
             }
-            accountTotal.totalUsed += account.getDouble("bill") ?: 0.0
+            // Note: totalUsed is accumulated from transactions, not stored on the account doc
             accountTotal.dueAmount = account.getDouble("dueAmount") ?: 0.0
             accountTotal.dueDate = account.getString("dueDate").orEmpty()
             accountTotal.remindersEnabled = account.getBoolean("remindersEnabled") == true
@@ -605,7 +623,10 @@ class FirebaseRepository(
         transactions.forEach { transaction ->
             val accountId = transaction.getString("accountId").orEmpty()
             val amount = transaction.getDouble("amount") ?: 0.0
-            if (accountId.isBlank() || amount <= 0.0) return@forEach
+            val splitGroupId = transaction.getString("splitGroupId").orEmpty()
+            // Allow split parts with blank accountId to still be attached to the customer
+            if (amount <= 0.0) return@forEach
+            if (accountId.isBlank() && splitGroupId.isBlank()) return@forEach
 
             val fallbackOption = IndianAccountCatalog.optionById(accountId)
             val accountKind = AccountKind.fromStorage(
@@ -633,23 +654,24 @@ class FirebaseRepository(
                 )
 
                 if (!isDeleted && !isFutureEmi) {
-                    val accountTotal = accountTotals.getOrPut(accountId) {
-                        RunningAccountTotal(
-                            id = accountId,
-                            name = accountName,
-                            accountKind = accountKind
-                        )
-                    }
-                    accountTotal.totalUsed += amount
+                    // Only bank/credit card transactions affect account totals
+                    if (accountKind != AccountKind.PERSON) {
+                        val accountTotal = accountTotals.getOrPut(accountId) {
+                            RunningAccountTotal(
+                                id = accountId,
+                                name = accountName,
+                                accountKind = accountKind
+                            )
+                        }
+                        accountTotal.totalUsed += amount
 
-                    // Customer partial payments and settlements reduce the outstanding balance
-                    val partialPaid = transaction.getDouble("partialPaidAmount") ?: 0.0
-                    val isSettledTx = transaction.getBoolean("isSettled") == true
-                    when {
-                        // Settled: full amount is paid (partial is subsumed)
-                        isSettledTx -> accountTotal.customerPaid += amount
-                        // Unsettled with partial: only count the partial
-                        partialPaid > 0.0 -> accountTotal.customerPaid += partialPaid
+                        // Customer partial payments and settlements reduce the outstanding balance
+                        val partialPaid = transaction.getDouble("partialPaidAmount") ?: 0.0
+                        val isSettledTx = transaction.getBoolean("isSettled") == true
+                        when {
+                            isSettledTx -> accountTotal.customerPaid += amount
+                            partialPaid > 0.0 -> accountTotal.customerPaid += partialPaid
+                        }
                     }
                 }
 
@@ -682,6 +704,8 @@ class FirebaseRepository(
                         settledDate = transaction.getString("settledDate").orEmpty(),
                         partialPaidAmount = transaction.getDouble("partialPaidAmount") ?: 0.0,
                         dueDate = transaction.getString("dueDate").orEmpty(),
+                        personName = transaction.getString("personName").orEmpty(),
+                        splitGroupId = transaction.getString("splitGroupId").orEmpty(),
                         emiGroupId = transaction.getString("emiGroupId").orEmpty(),
                         emiIndex = (transaction.getLong("emiIndex") ?: 0L).toInt(),
                         emiTotal = (transaction.getLong("emiTotal") ?: 0L).toInt()

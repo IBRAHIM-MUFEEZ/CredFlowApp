@@ -8,13 +8,15 @@ enum class AccountKind(
     val label: String
 ) {
     BANK_ACCOUNT("bank_account", "Bank Account"),
-    CREDIT_CARD("credit_card", "Credit Card");
+    CREDIT_CARD("credit_card", "Credit Card"),
+    PERSON("person", "Person");
 
     companion object {
         fun fromStorage(value: String?): AccountKind {
             return when (value?.lowercase()) {
                 "bank_account", "bank", "account" -> BANK_ACCOUNT
                 "credit_card", "credit", "card" -> CREDIT_CARD
+                "person" -> PERSON
                 else -> CREDIT_CARD
             }
         }
@@ -75,7 +77,8 @@ object IndianAccountCatalog {
     ): List<AccountOption> {
         val baseOptions = when (accountKind) {
             AccountKind.BANK_ACCOUNT -> bankAccounts
-            AccountKind.CREDIT_CARD -> creditCards
+            AccountKind.CREDIT_CARD  -> creditCards
+            AccountKind.PERSON       -> emptyList()
         }
         return if (selectedAccountIds == null) {
             baseOptions
@@ -179,12 +182,15 @@ data class CustomerTransaction(
     val settledDate: String = "",
     val partialPaidAmount: Double = 0.0,
     val dueDate: String = "",
+    val personName: String = "",     // filled when accountKind == PERSON
+    val splitGroupId: String = "",   // links split transactions together
     // EMI fields
     val emiGroupId: String = "",
     val emiIndex: Int = 0,
     val emiTotal: Int = 0
 ) {
     val isEmi: Boolean get() = emiGroupId.isNotBlank()
+    val isSplit: Boolean get() = splitGroupId.isNotBlank()
 
     private fun installmentDate(): LocalDate? {
         return runCatching { LocalDate.parse(transactionDate) }.getOrNull()
@@ -209,6 +215,15 @@ data class AppData(
     val accounts: List<CardSummary>,
     val customers: List<CustomerSummary>,
     val deletedCustomers: List<CustomerSummary>
+)
+
+// Represents one row in a split transaction entry dialog
+data class SplitEntry(
+    val accountKind: AccountKind = AccountKind.CREDIT_CARD,
+    val accountId: String = "",
+    val accountName: String = "",
+    val personName: String = "",
+    val amount: String = ""
 )
 
 data class Transaction(

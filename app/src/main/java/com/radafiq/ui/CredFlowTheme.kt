@@ -53,55 +53,56 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.radafiq.data.settings.AppThemeMode
 
-private val RadafiqNight = Color(0xFF0A0612)
-private val RadafiqNightDeep = Color(0xFF100A1E)
-private val RadafiqNightSoft = Color(0xFF1A1030)
-private val RadafiqNightRaised = Color(0xFF231540)
-private val RadafiqOutline = Color(0xFF3D2B6B)
-private val RadafiqCanvas = Color(0xFFF5F7FF)
+private val RadafiqNight = Color(0xFF020D18)
+private val RadafiqNightDeep = Color(0xFF071525)
+private val RadafiqNightSoft = Color(0xFF0C2035)
+private val RadafiqNightRaised = Color(0xFF102840)
+private val RadafiqOutline = Color(0xFF1A4060)
+private val RadafiqCanvas = Color(0xFFF0F8FF)
 private val RadafiqWhite = Color(0xFFFFFFFF)
-private val RadafiqText = Color(0xFFF0EEFF)
-private val RadafiqMuted = Color(0xFF9B8EC4)
-private val RadafiqPurple = Color(0xFF667EEA)
-private val RadafiqViolet = Color(0xFF764BA2)
-private val RadafiqPurpleLight = Color(0xFFADB8F5)
-private val RadafiqPink = Color(0xFFF093FB)
-private val RadafiqPinkSoft = Color(0xFFFAC8FD)
-private val RadafiqRed = Color(0xFFF5576C)
+private val RadafiqText = Color(0xFFE8F4FF)
+private val RadafiqMuted = Color(0xFF6BAED4)
+
+// Logo brand colors — deep blue → teal → green
+private val RadafiqBlueDeep = Color(0xFF1A4FD4)
+private val RadafiqBlue = Color(0xFF1A8FD4)
+private val RadafiqTeal = Color(0xFF1AABCF)
+private val RadafiqGreen = Color(0xFF1DD9A0)
+private val RadafiqRed = Color(0xFFE8445A)
 private val RadafiqRedSoft = Color(0xFFFFAAB5)
 
 private val RadafiqLightColors: ColorScheme = lightColorScheme(
-    primary = RadafiqPurple,
+    primary = RadafiqBlue,
     onPrimary = RadafiqWhite,
-    primaryContainer = Color(0xFFDDE3FF),
-    onPrimaryContainer = Color(0xFF1A0A40),
-    secondary = RadafiqViolet,
+    primaryContainer = Color(0xFFD8EFFA),
+    onPrimaryContainer = Color(0xFF071525),
+    secondary = RadafiqBlueDeep,
     onSecondary = RadafiqWhite,
-    secondaryContainer = Color(0xFFEAD8FF),
-    onSecondaryContainer = Color(0xFF1A0A40),
-    tertiary = Color(0xFFF5F0FF),
-    onTertiary = Color(0xFF1A0A40),
+    secondaryContainer = Color(0xFFD0E8F8),
+    onSecondaryContainer = Color(0xFF071525),
+    tertiary = RadafiqGreen,
+    onTertiary = Color(0xFF071525),
     error = RadafiqRed,
     onError = RadafiqWhite,
     background = RadafiqCanvas,
-    onBackground = Color(0xFF1A0A40),
+    onBackground = Color(0xFF071525),
     surface = RadafiqWhite,
-    onSurface = Color(0xFF1A0A40),
-    surfaceVariant = Color(0xFFEDE8FF),
-    onSurfaceVariant = Color(0xFF5A4880),
-    outline = Color(0xFFBDB0E0)
+    onSurface = Color(0xFF071525),
+    surfaceVariant = Color(0xFFD8EFFA),
+    onSurfaceVariant = Color(0xFF3A7FA8),
+    outline = Color(0xFFA8D4EA)
 )
 
 private val RadafiqDarkColors: ColorScheme = darkColorScheme(
-    primary = RadafiqPurple,
+    primary = RadafiqBlue,
     onPrimary = RadafiqWhite,
-    primaryContainer = RadafiqViolet,
+    primaryContainer = RadafiqBlueDeep,
     onPrimaryContainer = RadafiqText,
-    secondary = RadafiqPink,
-    onSecondary = Color(0xFF1A0A40),
-    secondaryContainer = Color(0xFF2A1550),
-    onSecondaryContainer = RadafiqPinkSoft,
-    tertiary = RadafiqPurpleLight,
+    secondary = RadafiqTeal,
+    onSecondary = Color(0xFF071525),
+    secondaryContainer = Color(0xFF0C2035),
+    onSecondaryContainer = Color(0xFFB8E8F8),
+    tertiary = RadafiqGreen,
     onTertiary = RadafiqNightDeep,
     error = RadafiqRed,
     onError = RadafiqWhite,
@@ -167,7 +168,7 @@ fun RadafiqTheme(
             val statusBarColor = if (useDarkTheme) {
                 RadafiqNightDeep
             } else {
-                Color(0xFFDDE3FF)
+                Color(0xFFD8EFFA)
             }
             window.statusBarColor = statusBarColor.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
@@ -190,8 +191,8 @@ fun RadafiqBackground(content: @Composable () -> Unit) {
     val backgroundBrush = if (useDarkTheme) {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF06030F),
-                Color(0xFF0E0820),
+                Color(0xFF020D18),
+                Color(0xFF071525),
                 MaterialTheme.colorScheme.background
             )
         )
@@ -199,7 +200,7 @@ fun RadafiqBackground(content: @Composable () -> Unit) {
         Brush.verticalGradient(
             colors = listOf(
                 RadafiqWhite,
-                Color(0xFFF0EEFF),
+                Color(0xFFEAF6FF),
                 MaterialTheme.colorScheme.background
             )
         )
@@ -222,9 +223,9 @@ fun RadafiqBackground(content: @Composable () -> Unit) {
 @Composable
 private fun GlassBackdrop() {
     val useDarkTheme = LocalRadafiqDarkTheme.current
-    val primaryGlow = RadafiqPurple.copy(alpha = if (useDarkTheme) 0.18f else 0.12f)
-    val secondaryGlow = RadafiqPink.copy(alpha = if (useDarkTheme) 0.12f else 0.1f)
-    val tertiaryGlow = RadafiqViolet.copy(alpha = if (useDarkTheme) 0.1f else 0.08f)
+    val primaryGlow = RadafiqBlue.copy(alpha = if (useDarkTheme) 0.18f else 0.12f)
+    val secondaryGlow = RadafiqGreen.copy(alpha = if (useDarkTheme) 0.12f else 0.10f)
+    val tertiaryGlow = RadafiqTeal.copy(alpha = if (useDarkTheme) 0.10f else 0.08f)
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         drawCircle(
@@ -398,7 +399,7 @@ fun FlowCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 content()
             }
@@ -640,8 +641,9 @@ fun parseDisplayDate(display: String): String {
 
 fun accountAccent(accountKind: com.radafiq.data.models.AccountKind): Color {
     return when (accountKind) {
-        com.radafiq.data.models.AccountKind.BANK_ACCOUNT -> RadafiqPurple
-        com.radafiq.data.models.AccountKind.CREDIT_CARD -> RadafiqRed
+        com.radafiq.data.models.AccountKind.BANK_ACCOUNT -> RadafiqBlue
+        com.radafiq.data.models.AccountKind.CREDIT_CARD  -> RadafiqRed
+        com.radafiq.data.models.AccountKind.PERSON       -> RadafiqGreen
     }
 }
 

@@ -76,6 +76,7 @@ class AppSettingsRepository(context: Context) {
         return mutableMapOf<String, Any>(
             KEY_THEME_MODE to _settings.value.themeMode.name,
             KEY_SELECTED_ACCOUNT_IDS to _settings.value.selectedAccountIds.toList()
+            // Drive timestamps are device-local and intentionally excluded from backup
         )
     }
 
@@ -87,6 +88,7 @@ class AppSettingsRepository(context: Context) {
             else -> emptySet()
         }
 
+        // Preserve existing local timestamps — they are not part of the backup payload
         persist(
             AppSettingsState(
                 themeMode = themeMode,
@@ -95,10 +97,8 @@ class AppSettingsRepository(context: Context) {
                 } else {
                     IndianAccountCatalog.sanitizeSelectedAccountIds(selectedAccountIds)
                 },
-                lastDriveBackupTime = data[KEY_LAST_DRIVE_BACKUP_TIME] as? String
-                    ?: _settings.value.lastDriveBackupTime,
-                lastDriveRestoreTime = data[KEY_LAST_DRIVE_RESTORE_TIME] as? String
-                    ?: _settings.value.lastDriveRestoreTime
+                lastDriveBackupTime = _settings.value.lastDriveBackupTime,
+                lastDriveRestoreTime = _settings.value.lastDriveRestoreTime
             )
         )
     }

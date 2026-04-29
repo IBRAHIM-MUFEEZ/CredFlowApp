@@ -40,7 +40,6 @@ fun AddPaymentScreen(
         mutableStateOf("")
     }
     var amount by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
 
     val today = LocalDate.now().toString()
     val accountOptions = remember(selectedKind, selectedAccountIds) {
@@ -150,31 +149,20 @@ fun AddPaymentScreen(
 
                         Button(
                             onClick = {
-                                isLoading = true
-
                                 vm.addPayment(
                                     accountId = selectedAccount.id,
                                     accountName = selectedAccount.name,
                                     accountKind = selectedKind,
                                     amount = amount
                                 )
-
-                                isLoading = false
                                 onNavigateBack()
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp),
-                            enabled = amount.toDoubleOrNull() != null
+                            enabled = (amount.toDoubleOrNull() ?: 0.0) > 0.0
                         ) {
-                            if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text("Save Payment")
-                            }
+                            Text("Save Payment")
                         }
                     }
                 }

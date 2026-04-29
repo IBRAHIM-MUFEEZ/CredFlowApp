@@ -13,6 +13,7 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.radafiq.data.models.CustomerSummary
 import com.radafiq.data.models.CustomerTransaction
+import com.radafiq.data.models.AccountKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -114,15 +115,29 @@ class StatementGenerator(private val context: Context) {
                 yPosition = drawDuesSummary(canvas, customer, pageWidth, yPosition, regular, bold)
                 yPosition += 18
 
+                // Transactions section
                 val transactions = customer.transactions
                     .filter { it.isVisibleInTransactions() }
-                    .sortedByDescending { it.transactionDate }
+                    .sortedWith(compareByDescending<CustomerTransaction> { it.transactionDate }.thenByDescending { it.amount })
 
                 if (transactions.isNotEmpty()) {
                     yPosition = drawSectionHeader(canvas, "Transactions", pageWidth, yPosition, bold)
                     yPosition += 8
 
-                    for (transaction in transactions) {
+                    // Group splits together
+                    val splitMap = linkedMapOf<String, MutableList<CustomerTransaction>>()
+                    val orderedGroups = mutableListOf<List<CustomerTransaction>>()
+                    transactions.forEach { t ->
+                        if (t.splitGroupId.isNotBlank()) {
+                            val list = splitMap.getOrPut(t.splitGroupId) { mutableListOf() }
+                            if (list.isEmpty()) orderedGroups.add(list)
+                            list.add(t)
+                        } else {
+                            orderedGroups.add(listOf(t))
+                        }
+                    }
+
+                    for (group in orderedGroups) {
                         if (yPosition > pageHeight - 110) {
                             drawFooter(canvas, pageNumber, pageHeight, generatedByName, regular)
                             pdfDocument.finishPage(page)
@@ -133,7 +148,11 @@ class StatementGenerator(private val context: Context) {
                             drawPageBackground(canvas, pageWidth, pageHeight, isDark)
                             yPosition = 40
                         }
-                        yPosition = drawTransactionRow(canvas, transaction, pageWidth, yPosition, regular, bold)
+                        if (group.size > 1) {
+                            yPosition = drawSplitTransactionRow(canvas, group, pageWidth, yPosition, regular, bold)
+                        } else {
+                            yPosition = drawTransactionRow(canvas, group.first(), pageWidth, yPosition, regular, bold)
+                        }
                     }
                 }
 
@@ -383,14 +402,34 @@ class StatementGenerator(private val context: Context) {
         bold: Typeface
     ): Int {
         val visible = customer.transactions.filter { it.isVisibleInTransactions() }
-        val settled   = visible.count { it.isSettled }
-        val partial   = visible.count { !it.isSettled && it.partialPaidAmount > 0 }
-        val unpaid    = visible.count { !it.isSettled && it.partialPaidAmount <= 0 }
-        val totalTxns = visible.size
 
-        val amtSettled = visible.filter { it.isSettled }.sumOf { it.amount }
-        val amtPartial = visible.filter { !it.isSettled && it.partialPaidAmount > 0 }.sumOf { it.amount - it.partialPaidAmount }
-        val amtUnpaid  = visible.filter { !it.isSettled && it.partialPaidAmount <= 0 }.sumOf { it.amount }
+        // Group splits so each split group counts as 1 logical transaction
+        val splitGroups = linkedMapOf<String, MutableList<CustomerTransaction>>()
+        val logicalGroups = mutableListOf<List<CustomerTransaction>>()
+        visible.forEach { t ->
+            if (t.splitGroupId.isNotBlank()) {
+                val list = splitGroups.getOrPut(t.splitGroupId) { mutableListOf() }
+                if (list.isEmpty()) logicalGroups.add(list)
+                list.add(t)
+            } else {
+                logicalGroups.add(listOf(t))
+            }
+        }
+
+        val totalTxns = logicalGroups.size
+        val settled = logicalGroups.count { group -> group.all { it.isSettled } }
+        val partial = logicalGroups.count { group ->
+            !group.all { it.isSettled } && group.any { it.partialPaidAmount > 0 }
+        }
+        val unpaid = logicalGroups.count { group ->
+            !group.all { it.isSettled } && group.none { it.partialPaidAmount > 0 }
+        }
+
+        val amtSettled = logicalGroups.filter { g -> g.all { it.isSettled } }.sumOf { g -> g.sumOf { it.amount } }
+        val amtPartial = logicalGroups.filter { g -> !g.all { it.isSettled } && g.any { it.partialPaidAmount > 0 } }
+            .sumOf { g -> g.sumOf { (it.amount - it.partialPaidAmount).coerceAtLeast(0.0) } }
+        val amtUnpaid = logicalGroups.filter { g -> !g.all { it.isSettled } && g.none { it.partialPaidAmount > 0 } }
+            .sumOf { g -> g.sumOf { it.amount } }
 
         // Section header
         val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -444,7 +483,7 @@ class StatementGenerator(private val context: Context) {
             // Label
             val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize   = 8f
-                typeface   = regular
+                typeface   = bold
                 this.color = TEXT_MUTED
             }
             canvas.drawText(box.label, left + 12f, top + 16f, labelPaint)
@@ -460,7 +499,7 @@ class StatementGenerator(private val context: Context) {
             // Amount
             val amtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize   = 8f
-                typeface   = regular
+                typeface   = bold
                 this.color = TEXT_MUTED
             }
             canvas.drawText(box.amount, left + 12f, top + 52f, amtPaint)
@@ -500,7 +539,7 @@ class StatementGenerator(private val context: Context) {
 
             val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize   = 8f
-                typeface   = regular
+                typeface   = bold
                 this.color = TEXT_MUTED
             }
             canvas.drawText(label, left + 10f, top + 16f, labelPaint)
@@ -540,6 +579,54 @@ class StatementGenerator(private val context: Context) {
         return startY + 14
     }
 
+    // ── Split transaction row ─────────────────────────────────────────────────
+    private fun drawSplitTransactionRow(
+        canvas: Canvas,
+        splits: List<CustomerTransaction>,
+        pageWidth: Int,
+        startY: Int,
+        regular: Typeface,
+        bold: Typeface
+    ): Int {
+        val first = splits.first()
+        val total = splits.sumOf { it.amount }
+        val allSettled = splits.all { it.isSettled }
+        val rowH = 38
+        val left  = 40f
+        val right = (pageWidth - 40).toFloat()
+
+        val rowFill = Paint().apply { color = BG_RAISED }
+        canvas.drawRoundRect(RectF(left, startY.toFloat(), right, (startY + rowH).toFloat()), 8f, 8f, rowFill)
+
+        val statusColor = when {
+            allSettled -> GREEN_SETTLED
+            splits.any { it.partialPaidAmount > 0 } -> ORANGE_PENDING
+            else -> RED_ACCENT
+        }
+        val barPaint = Paint().apply { color = PRIMARY }
+        canvas.drawRoundRect(RectF(left, startY.toFloat(), left + 4f, (startY + rowH).toFloat()), 4f, 4f, barPaint)
+
+        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10f; typeface = bold; color = TEXT_PRIMARY }
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 8f; typeface = bold; color = TEXT_MUTED }
+        val amountPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11f; typeface = bold; color = PRIMARY }
+        val statusPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 8f; typeface = regular; color = statusColor }
+
+        canvas.drawText(first.transactionDate, left + 10f, startY + 14f, labelPaint)
+        canvas.drawText(first.name, left + 80f, startY + 14f, namePaint)
+        canvas.drawText(formatMoney(total), right - 120f, startY + 14f, amountPaint)
+        val splitStatus = when {
+            allSettled -> "✓ Settled"
+            splits.any { it.partialPaidAmount > 0 } -> "~ Partial"
+            else -> "✗ Unpaid"
+        }
+        canvas.drawText(splitStatus, right - 120f, startY + 26f, statusPaint)
+
+        val sepPaint = Paint().apply { strokeWidth = 0.5f; color = OUTLINE }
+        canvas.drawLine(left, (startY + rowH).toFloat(), right, (startY + rowH).toFloat(), sepPaint)
+
+        return startY + rowH + 4
+    }
+
     // ── Transaction row ───────────────────────────────────────────────────────
     private fun drawTransactionRow(
         canvas: Canvas,
@@ -568,18 +655,13 @@ class StatementGenerator(private val context: Context) {
 
         val datePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 8f
-            typeface = regular
+            typeface = bold
             color    = TEXT_MUTED
         }
         val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 10f
             typeface = bold
             color    = TEXT_PRIMARY
-        }
-        val accountPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 8f
-            typeface = regular
-            color    = TEXT_MUTED
         }
         val amountPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 11f
@@ -597,7 +679,6 @@ class StatementGenerator(private val context: Context) {
 
         canvas.drawText(transaction.transactionDate, left + 10f, textTop, datePaint)
         canvas.drawText(transaction.name, left + 80f, textTop, namePaint)
-        canvas.drawText(transaction.accountName, left + 80f, textBot, accountPaint)
 
         val statusText = when {
             transaction.isSettled                     -> "✓ Settled"
