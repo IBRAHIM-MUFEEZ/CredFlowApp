@@ -13,3 +13,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase config files (contain API keys)
+app/google-services.json
+web-app/src/firebase.ts
+web-app/.env
+web-app/.env.local
+
+# Firebase Admin service account key — NEVER commit this
+web-app/serviceAccountKey.json

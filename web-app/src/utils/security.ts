@@ -1,18 +1,50 @@
-// SHA-256 hashing using Web Crypto API
-
-export async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// Passcode hashing using Web Crypto API
+// Uses PBKDF2 (100,000 iterations) — slow by design to resist brute-force attacks
 
 export async function hashPasscode(passcode: string, salt: string): Promise<string> {
-  return sha256(`${salt}:${passcode}`);
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(passcode),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: new TextEncoder().encode(salt),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(bits))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export async function hashRecoveryAnswer(answer: string, salt: string): Promise<string> {
-  return sha256(`${salt}:recovery:${answer.trim().toLowerCase()}`);
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(answer.trim().toLowerCase()),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: new TextEncoder().encode(`${salt}:recovery`),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(bits))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export function generateSalt(): string {

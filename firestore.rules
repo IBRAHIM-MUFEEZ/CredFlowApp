@@ -1,18 +1,12 @@
 rules_version = '2';
-// PASTE THESE RULES IN: Firebase Console → Firestore → Rules tab → Publish
-//
-// Current security model: userId is derived from Google email (google_user@gmail.com)
-// which is not guessable. For stronger security, integrate Firebase Authentication
-// and replace the rule below with:
-//   allow read, write: if request.auth != null
-//     && request.auth.token.email != null
-//     && ('google_' + request.auth.token.email.lower()) == userId;
+
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId}/{document=**} {
-      // Only allow access to paths that follow the expected userId format
-      allow read, write: if userId.matches('google_[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}')
-                         || userId.matches('device_[a-f0-9\\-]{36}');
+      // SECURE: Only authenticated users can access their own data
+      // userId must match the authenticated user's Firebase UID
+      allow read, write: if request.auth != null 
+                         && request.auth.uid == userId;
     }
   }
 }
