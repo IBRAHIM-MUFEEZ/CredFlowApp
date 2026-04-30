@@ -258,7 +258,7 @@ fun SecuritySetupScreen(
     var useBiometric by remember(biometricAvailable) { mutableStateOf(biometricAvailable) }
 
     val passcodesMatch = passcode.length == 6 && passcode == confirmPasscode
-    val hasRecoveryDetails = selectedRecoveryQuestion.isNotBlank() && recoveryAnswer.isNotBlank()
+    val hasRecoveryDetails = selectedRecoveryQuestion.isNotBlank() && recoveryAnswer.trim().length >= 3
 
     RadafiqBackground {
         Column(
@@ -278,7 +278,7 @@ fun SecuritySetupScreen(
             FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
                 OutlinedTextField(
                     value = passcode,
-                    onValueChange = { passcode = it.take(6) },
+                    onValueChange = { passcode = it.filter(Char::isDigit).take(6) },
                     label = { Text("Create Passcode") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -287,7 +287,7 @@ fun SecuritySetupScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = confirmPasscode,
-                    onValueChange = { confirmPasscode = it.take(6) },
+                    onValueChange = { confirmPasscode = it.filter(Char::isDigit).take(6) },
                     label = { Text("Confirm Passcode") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -409,7 +409,7 @@ fun ChangePasscodeScreen(
     val canSave = currentPasscode.isNotBlank() &&
         passcodesMatch &&
         selectedRecoveryQuestion.isNotBlank() &&
-        recoveryAnswer.isNotBlank()
+        recoveryAnswer.trim().length >= 3
 
     RadafiqBackground {
         Column(
@@ -430,7 +430,7 @@ fun ChangePasscodeScreen(
                 OutlinedTextField(
                     value = currentPasscode,
                     onValueChange = {
-                        currentPasscode = it.take(6)
+                        currentPasscode = it.filter(Char::isDigit).take(6)
                         localError = ""
                     },
                     label = { Text("Existing Passcode") },
@@ -442,7 +442,7 @@ fun ChangePasscodeScreen(
                 OutlinedTextField(
                     value = newPasscode,
                     onValueChange = {
-                        newPasscode = it.take(6)
+                        newPasscode = it.filter(Char::isDigit).take(6)
                         localError = ""
                     },
                     label = { Text("New Passcode") },
@@ -454,7 +454,7 @@ fun ChangePasscodeScreen(
                 OutlinedTextField(
                     value = confirmPasscode,
                     onValueChange = {
-                        confirmPasscode = it.take(6)
+                        confirmPasscode = it.filter(Char::isDigit).take(6)
                         localError = ""
                     },
                     label = { Text("Confirm New Passcode") },
@@ -681,7 +681,7 @@ fun AppLockScreen(
                     OutlinedTextField(
                         value = newPasscode,
                         onValueChange = {
-                            newPasscode = it.take(6)
+                            newPasscode = it.filter(Char::isDigit).take(6)
                             localError = ""
                         },
                         label = { Text("New Passcode") },
@@ -693,7 +693,7 @@ fun AppLockScreen(
                     OutlinedTextField(
                         value = confirmNewPasscode,
                         onValueChange = {
-                            confirmNewPasscode = it.take(6)
+                            confirmNewPasscode = it.filter(Char::isDigit).take(6)
                             localError = ""
                         },
                         label = { Text("Confirm New Passcode") },
@@ -750,7 +750,7 @@ fun AppLockScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = recoveryAnswer.isNotBlank() && recoveryPasscodesMatch
+                        enabled = recoveryAnswer.trim().length >= 3 && recoveryPasscodesMatch
                     ) {
                         Text("Reset Passcode")
                     }

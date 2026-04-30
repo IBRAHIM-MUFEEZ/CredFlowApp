@@ -648,7 +648,8 @@ fun CustomerCard(
                                     onDeleteAll = { group.splits.forEach { vm.deleteTransaction(it.id) } },
                                     onSettledChangeAll = { settled ->
                                         group.splits.forEach { vm.toggleTransactionSettled(it.id, settled) }
-                                    }
+                                    },
+                                    onEditSplit = { transactionToEdit = it }
                                 )
                             } else {
                                 val transaction = group.splits.first()
@@ -1082,7 +1083,8 @@ fun CustomerDetailScreen(
                                     onDeleteAll = { group.splits.forEach { vm.deleteTransaction(it.id) } },
                                     onSettledChangeAll = { settled ->
                                         group.splits.forEach { vm.toggleTransactionSettled(it.id, settled) }
-                                    }
+                                    },
+                                    onEditSplit = { transactionToEdit = it }
                                 )
                             } else {
                                 val transaction = group.splits.first()
@@ -1839,23 +1841,14 @@ fun TransactionEditorDialog(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-                    // Split total vs entered amount
+                    // Split total — just show the sum, no over-allocation warning
+                    // (in split mode the entries define the total; there's no pre-set budget)
                     val splitTotal = splitEntries.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
-                    val enteredTotal = calculatedAmount ?: 0.0
-                    val diff = enteredTotal - splitTotal
-                    if (enteredTotal > 0.0) {
+                    if (splitTotal > 0.0) {
                         Text(
-                            text = when {
-                                diff > 0.01  -> "Remaining to allocate: ${formatMoney(diff)}"
-                                diff < -0.01 -> "Over-allocated by: ${formatMoney(-diff)}"
-                                else         -> "✓ Fully allocated"
-                            },
+                            text = "Split Total: ${formatMoney(splitTotal)}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = when {
-                                diff > 0.01  -> warningColor()
-                                diff < -0.01 -> MaterialTheme.colorScheme.error
-                                else         -> MaterialTheme.colorScheme.primary
-                            },
+                            color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
@@ -2416,7 +2409,8 @@ private fun SplitTransactionRow(
     group: TransactionGroup,
     runningBalance: Double = -1.0,
     onDeleteAll: () -> Unit,
-    onSettledChangeAll: (Boolean) -> Unit
+    onSettledChangeAll: (Boolean) -> Unit,
+    onEditSplit: ((CustomerTransaction) -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDetailDialog by remember { mutableStateOf(false) }
@@ -2512,6 +2506,16 @@ private fun SplitTransactionRow(
                         modifier = Modifier.size(18.dp)
                     )
                 }
+                if (onEditSplit != null) {
+                    IconButton(onClick = { showDetailDialog = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "Edit split",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
                 IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Filled.Delete,
@@ -2566,7 +2570,11 @@ private fun SplitTransactionRow(
     }
 
     if (showDetailDialog) {
-        SplitDetailDialog(group = group, onDismiss = { showDetailDialog = false })
+        SplitDetailDialog(
+            group = group,
+            onDismiss = { showDetailDialog = false },
+            onEditSplit = onEditSplit
+        )
     }
 
     if (showDeleteConfirm) {
@@ -2589,7 +2597,8 @@ private fun SplitTransactionRow(
 @Composable
 private fun SplitDetailDialog(
     group: TransactionGroup,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onEditSplit: ((CustomerTransaction) -> Unit)? = null
 ) {
     val total = group.splits.sumOf { it.amount }
     val totalPaid = group.splits.sumOf { split ->
@@ -2791,6 +2800,22 @@ private fun SplitDetailDialog(
                                     color = if (split.isSettled) MaterialTheme.colorScheme.primary
                                             else warningColor()
                                 )
+                                if (onEditSplit != null) {
+                                    TextButton(
+                                        onClick = {
+                                            onDismiss()
+                                            onEditSplit(split)
+                                        },
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                        modifier = Modifier.height(24.dp)
+                                    ) {
+                                        Text(
+                                            "Edit",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
                             }
                         }
                         if (split.partialPaidAmount > 0.0 && !split.isSettled) {

@@ -3,11 +3,13 @@
     <cloud-backup>
         <!-- Exclude security-sensitive data from Android 12+ cloud backup -->
         <exclude domain="sharedpref" path="radafiq_security.xml" />
+        <exclude domain="sharedpref" path="radafiq_security_secure.xml" />
         <exclude domain="sharedpref" path="Radafiq_local_identity.xml" />
     </cloud-backup>
     <device-transfer>
         <!-- Exclude security data from device-to-device transfers -->
         <exclude domain="sharedpref" path="radafiq_security.xml" />
+        <exclude domain="sharedpref" path="radafiq_security_secure.xml" />
         <exclude domain="sharedpref" path="Radafiq_local_identity.xml" />
     </device-transfer>
 </data-extraction-rules>

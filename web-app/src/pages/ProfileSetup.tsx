@@ -9,6 +9,7 @@ export default function ProfileSetup() {
   const [email, setEmail] = useState(profile?.email ?? user?.email ?? '');
   const [saving, setSaving] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState('');
 
   // BUG-29 fix: sync form fields when profile loads after mount (e.g. after Google sign-in)
   useEffect(() => {
@@ -31,11 +32,18 @@ export default function ProfileSetup() {
 
   const handleGoogleSignIn = async () => {
     setSigningIn(true);
+    setSignInError('');
     try {
       await signInWithGoogle();
-    } catch (e) {
-      // Popup blocked or user cancelled — silently reset
-    } finally {
+      // signInWithRedirect navigates away — page will reload on return
+      // so we never reach here in the redirect flow
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err.code === 'auth/unauthorized-domain') {
+        setSignInError('This domain is not authorised. Add localhost to Firebase Console → Authentication → Authorized domains.');
+      } else {
+        setSignInError(`Sign-in failed: ${err.code ?? err.message ?? 'Unknown error'}`);
+      }
       setSigningIn(false);
     }
   };
@@ -66,6 +74,11 @@ export default function ProfileSetup() {
             >
               {signingIn ? 'Signing in...' : 'Continue with Google'}
             </button>
+            {signInError && (
+              <p style={{ color: 'var(--red)', fontSize: '0.8rem', marginTop: 8 }}>
+                {signInError}
+              </p>
+            )}
           </div>
         ) : (
           <div className="flow-card" style={{ marginBottom: '1rem', '--card-accent': 'var(--green)' } as React.CSSProperties}>

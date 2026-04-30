@@ -2,5 +2,6 @@
 <full-backup-content>
     <!-- Exclude security-sensitive SharedPreferences from Android auto-backup -->
     <exclude domain="sharedpref" path="radafiq_security.xml" />
+    <exclude domain="sharedpref" path="radafiq_security_secure.xml" />
     <exclude domain="sharedpref" path="Radafiq_local_identity.xml" />
 </full-backup-content>

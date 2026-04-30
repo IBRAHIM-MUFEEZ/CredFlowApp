@@ -5,10 +5,10 @@ import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.TimeUnit
 
 class DueReminderScheduler(
     private val context: Context
@@ -46,7 +46,10 @@ class DueReminderScheduler(
 
             val request = OneTimeWorkRequestBuilder<DueReminderWorker>()
                 .setInputData(inputData)
-                .setInitialDelay(Duration.between(now, reminderTime))
+                .setInitialDelay(
+                    ChronoUnit.MILLIS.between(now, reminderTime).coerceAtLeast(0L),
+                    TimeUnit.MILLISECONDS
+                )
                 .addTag(reminderTag(accountId))
                 .build()
 

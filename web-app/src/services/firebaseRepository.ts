@@ -60,6 +60,37 @@ function profileDoc(uid: string) {
   return doc(db, 'users', uid, 'profile', 'main');
 }
 
+function securityDoc(uid: string) {
+  return doc(db, 'users', uid, 'settings', 'security');
+}
+
+// ── Security settings ─────────────────────────────────────────────────────────
+
+export async function saveSecurityToCloud(uid: string, data: {
+  passcodeHash: string;
+  passcodeSalt: string;
+  lockEnabled: boolean;
+  recoveryQuestion: string;
+  recoveryAnswerHash: string;
+}): Promise<void> {
+  await deleteDoc(securityDoc(uid));
+}
+
+export async function loadSecurityFromCloud(uid: string): Promise<{
+  passcodeHash: string;
+  passcodeSalt: string;
+  lockEnabled: boolean;
+  recoveryQuestion: string;
+  recoveryAnswerHash: string;
+} | null> {
+  await deleteDoc(securityDoc(uid));
+  return null;
+}
+
+export async function clearSecurityFromCloud(uid: string): Promise<void> {
+  await deleteDoc(securityDoc(uid));
+}
+
 // ── Data builders ─────────────────────────────────────────────────────────────
 
 function buildAppData(
@@ -182,8 +213,11 @@ function buildAppData(
     customer.totalAmount = totalAmount;
     customer.settledTransactionAmount = settledAmount;
     customer.partialPaidAmount = partialAmount;
-    customer.manualPaidAmount = customer.creditDueAmount;
-    customer.balance = Math.max(0, totalAmount - settledAmount - partialAmount - customer.creditDueAmount);
+    customer.manualPaidAmount = customer.creditDueAmount; // raw stored value
+    // creditDueAmount = total customer paid = manual + settled + partial (matches Android)
+    const customerPaidAmount = customer.creditDueAmount + settledAmount + partialAmount;
+    customer.creditDueAmount = customerPaidAmount;
+    customer.balance = Math.max(0, totalAmount - customerPaidAmount);
 
     // Savings balance
     const deposited = customer.savingsEntries
@@ -219,10 +253,11 @@ function buildAppData(
 
   // Aggregate transaction amounts per account
   allTransactions.forEach(t => {
-    if (!t.emiGroupId) {
-      // Normal transaction
-    } else {
-      // EMI — only count visible
+    // Person transactions don't affect account totals — only bank/credit card do
+    if (t.accountKind === 'person') return;
+
+    if (t.emiGroupId) {
+      // EMI — only count visible (current month and past)
       const d = new Date(t.transactionDate);
       if (!isNaN(d.getTime())) {
         const refYear = today.getFullYear();
@@ -251,11 +286,23 @@ function buildAppData(
       accountSummaryMap.set(t.accountId, summary);
     }
     summary.bill += t.amount;
+
+    // Track customer payments (settled + partial) to compute payable correctly
+    // matching Android's logic: payable = totalUsed - customerPaid
+    if (t.isSettled) {
+      summary.payable -= t.amount; // will be corrected after loop
+    } else if (t.partialPaidAmount > 0) {
+      summary.payable -= t.partialPaidAmount; // will be corrected after loop
+    }
   });
 
-  // Compute payable
+  // Compute payable: bill - customerPaid (settled + partial), floored at 0
+  // This matches Android: payable = totalUsed - customerPaid
   accountSummaryMap.forEach(summary => {
-    summary.payable = Math.max(0, summary.bill - summary.pending);
+    // payable was used as a running customerPaid accumulator above (negative)
+    // bill + payable(negative) = bill - customerPaid
+    const customerPaid = -summary.payable;
+    summary.payable = Math.max(0, summary.bill - customerPaid);
   });
 
   const customers = Array.from(customerMap.values()).filter(c => !c.isDeleted);

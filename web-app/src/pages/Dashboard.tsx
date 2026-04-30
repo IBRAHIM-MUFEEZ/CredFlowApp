@@ -174,7 +174,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-// BUG-35 fix: sort first, then slice
+            {/* BUG-35 fix: sort first, then slice */}
             {[...visibleCards].sort((a, b) => b.payable - a.payable).slice(0, 6).map(card => (
               <ActivityCard key={card.id} card={card} />
             ))}

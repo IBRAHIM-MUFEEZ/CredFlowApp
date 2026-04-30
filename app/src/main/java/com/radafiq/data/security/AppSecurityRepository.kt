@@ -2,7 +2,12 @@ package com.radafiq.data.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import java.security.MessageDigest
+import java.security.SecureRandom
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,13 +22,21 @@ data class AppSecurityState(
 )
 
 class AppSecurityRepository(context: Context) {
-    private val preferences: SharedPreferences = context.applicationContext.getSharedPreferences(
-        PREFERENCES_NAME,
+    private val appContext = context.applicationContext
+    private val legacyPreferences: SharedPreferences = appContext.getSharedPreferences(
+        LEGACY_PREFERENCES_NAME,
         Context.MODE_PRIVATE
     )
+    private val preferences: SharedPreferences = createSecurePreferences(appContext)
 
-    private val _state = MutableStateFlow(loadState())
-    val state: StateFlow<AppSecurityState> = _state.asStateFlow()
+    private val _state: MutableStateFlow<AppSecurityState>
+    val state: StateFlow<AppSecurityState>
+
+    init {
+        migrateLegacyPreferencesIfNeeded()
+        _state = MutableStateFlow(loadState())
+        state = _state.asStateFlow()
+    }
 
     fun setPasscode(
         passcode: String,
@@ -34,9 +47,9 @@ class AppSecurityRepository(context: Context) {
         val normalizedQuestion = recoveryQuestion.trim()
         val normalizedAnswer = normalizeRecoveryAnswer(recoveryAnswer)
         if (
-            normalized.length < 4 ||
+            !isValidPasscode(normalized) ||
             normalizedQuestion.isBlank() ||
-            normalizedAnswer.isBlank()
+            normalizedAnswer.length < MIN_RECOVERY_ANSWER_LENGTH
         ) {
             return
         }
@@ -63,9 +76,9 @@ class AppSecurityRepository(context: Context) {
         val normalizedQuestion = recoveryQuestion.trim()
         val normalizedAnswer = normalizeRecoveryAnswer(recoveryAnswer)
         if (
-            normalized.length < 4 ||
+            !isValidPasscode(normalized) ||
             normalizedQuestion.isBlank() ||
-            normalizedAnswer.isBlank()
+            normalizedAnswer.length < MIN_RECOVERY_ANSWER_LENGTH
         ) {
             return false
         }
@@ -139,7 +152,7 @@ class AppSecurityRepository(context: Context) {
         if (
             !_state.value.hasRecoveryQuestion ||
             !matchesRecoveryAnswer(recoveryAnswer) ||
-            newPasscode.trim().length < 4 ||
+            !isValidPasscode(newPasscode.trim()) ||
             currentRecoveryQuestion.isBlank()
         ) {
             return false
@@ -167,17 +180,11 @@ class AppSecurityRepository(context: Context) {
     }
 
     fun exportSettings(): Map<String, Any> {
-        val passcodeHash = preferences.getString(KEY_PASSCODE_HASH, null).orEmpty()
-        val passcodeSalt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
-        val recoveryQuestion = preferences.getString(KEY_RECOVERY_QUESTION, null).orEmpty()
-        val recoveryAnswerHash = preferences.getString(KEY_RECOVERY_ANSWER_HASH, null).orEmpty()
+        // Passcode and recovery hashes are intentionally not exported. A 6 digit
+        // lock code is easy to brute force offline if a backup file is leaked.
         return mapOf(
-            KEY_LOCK_ENABLED to _state.value.lockEnabled,
-            KEY_BIOMETRIC_ENABLED to _state.value.biometricEnabled,
-            KEY_PASSCODE_HASH to passcodeHash,
-            KEY_PASSCODE_SALT to passcodeSalt,
-            KEY_RECOVERY_QUESTION to recoveryQuestion,
-            KEY_RECOVERY_ANSWER_HASH to recoveryAnswerHash
+            KEY_LOCK_ENABLED to false,
+            KEY_BIOMETRIC_ENABLED to false
         )
     }
 
@@ -193,10 +200,10 @@ class AppSecurityRepository(context: Context) {
         val hasRecovery = recoveryQuestion.isNotBlank() && recoveryAnswerHash.isNotBlank()
 
         preferences.edit().apply {
-            if (hasPasscode) putString(KEY_PASSCODE_HASH, passcodeHash)
-            if (passcodeSalt.isNotBlank()) putString(KEY_PASSCODE_SALT, passcodeSalt)
-            if (recoveryQuestion.isNotBlank()) putString(KEY_RECOVERY_QUESTION, recoveryQuestion)
-            if (recoveryAnswerHash.isNotBlank()) putString(KEY_RECOVERY_ANSWER_HASH, recoveryAnswerHash)
+            if (hasPasscode) putString(KEY_PASSCODE_HASH, passcodeHash) else remove(KEY_PASSCODE_HASH)
+            if (passcodeSalt.isNotBlank()) putString(KEY_PASSCODE_SALT, passcodeSalt) else remove(KEY_PASSCODE_SALT)
+            if (recoveryQuestion.isNotBlank()) putString(KEY_RECOVERY_QUESTION, recoveryQuestion) else remove(KEY_RECOVERY_QUESTION)
+            if (recoveryAnswerHash.isNotBlank()) putString(KEY_RECOVERY_ANSWER_HASH, recoveryAnswerHash) else remove(KEY_RECOVERY_ANSWER_HASH)
             putBoolean(KEY_LOCK_ENABLED, lockEnabled && hasPasscode)
             putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled && hasPasscode)
             apply()
@@ -257,45 +264,151 @@ class AppSecurityRepository(context: Context) {
 
     private fun matchesPasscode(passcode: String): Boolean {
         val storedHash = preferences.getString(KEY_PASSCODE_HASH, null).orEmpty()
-        return storedHash.isNotBlank() && storedHash == hashPasscode(passcode.trim())
+        if (storedHash.isBlank()) return false
+
+        val normalized = passcode.trim()
+        if (storedHash.startsWith(PBKDF2_PREFIX)) {
+            return constantTimeEquals(storedHash, hashPasscode(normalized))
+        }
+
+        val matchesLegacy = constantTimeEquals(storedHash, legacyHashPasscode(normalized))
+        if (matchesLegacy) {
+            preferences.edit().putString(KEY_PASSCODE_HASH, hashPasscode(normalized)).apply()
+        }
+        return matchesLegacy
     }
 
     private fun matchesRecoveryAnswer(answer: String): Boolean {
         val storedHash = preferences.getString(KEY_RECOVERY_ANSWER_HASH, null).orEmpty()
-        return storedHash.isNotBlank() &&
-            storedHash == hashRecoveryAnswer(normalizeRecoveryAnswer(answer))
+        if (storedHash.isBlank()) return false
+
+        val normalized = normalizeRecoveryAnswer(answer)
+        if (storedHash.startsWith(PBKDF2_PREFIX)) {
+            return constantTimeEquals(storedHash, hashRecoveryAnswer(normalized))
+        }
+
+        val matchesLegacy = constantTimeEquals(storedHash, legacyHashRecoveryAnswer(normalized))
+        if (matchesLegacy) {
+            preferences.edit().putString(KEY_RECOVERY_ANSWER_HASH, hashRecoveryAnswer(normalized)).apply()
+        }
+        return matchesLegacy
     }
 
     private fun hashPasscode(passcode: String): String {
-        // Salt with device-specific + app-specific value to prevent rainbow table attacks
-        val salt = preferences.getString(KEY_PASSCODE_SALT, null) ?: run {
-            val newSalt = java.util.UUID.randomUUID().toString()
-            preferences.edit().putString(KEY_PASSCODE_SALT, newSalt).apply()
-            newSalt
-        }
+        return pbkdf2(passcode, getOrCreateSalt())
+    }
+
+    private fun hashRecoveryAnswer(answer: String): String {
+        return pbkdf2("recovery:$answer", getOrCreateSalt())
+    }
+
+    private fun legacyHashPasscode(passcode: String): String {
+        val salt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest("$salt:$passcode".toByteArray())
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
-    private fun hashRecoveryAnswer(answer: String): String {
+    private fun legacyHashRecoveryAnswer(answer: String): String {
         val salt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest("$salt:recovery:$answer".toByteArray())
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
+    private fun getOrCreateSalt(): String {
+        return preferences.getString(KEY_PASSCODE_SALT, null) ?: run {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            val newSalt = bytes.toHex()
+            preferences.edit().putString(KEY_PASSCODE_SALT, newSalt).apply()
+            newSalt
+        }
+    }
+
+    private fun pbkdf2(value: String, salt: String): String {
+        val spec = PBEKeySpec(
+            value.toCharArray(),
+            salt.toByteArray(Charsets.UTF_8),
+            PBKDF2_ITERATIONS,
+            PBKDF2_KEY_LENGTH_BITS
+        )
+        val bytes = SecretKeyFactory
+            .getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(spec)
+            .encoded
+        return "$PBKDF2_PREFIX$PBKDF2_ITERATIONS:${bytes.toHex()}"
+    }
+
+    private fun constantTimeEquals(left: String, right: String): Boolean {
+        return MessageDigest.isEqual(
+            left.toByteArray(Charsets.UTF_8),
+            right.toByteArray(Charsets.UTF_8)
+        )
+    }
+
+    private fun ByteArray.toHex(): String {
+        return joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun isValidPasscode(passcode: String): Boolean {
+        return passcode.length == PASSCODE_LENGTH && passcode.all(Char::isDigit)
+    }
+
     private fun normalizeRecoveryAnswer(answer: String): String {
         return answer.trim().lowercase()
     }
 
+    private fun createSecurePreferences(context: Context): SharedPreferences {
+        return runCatching {
+            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            EncryptedSharedPreferences.create(
+                ENCRYPTED_PREFERENCES_NAME,
+                masterKeyAlias,
+                context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            context.getSharedPreferences(ENCRYPTED_PREFERENCES_NAME, Context.MODE_PRIVATE)
+        }
+    }
+
+    private fun migrateLegacyPreferencesIfNeeded() {
+        if (preferences.contains(KEY_PASSCODE_HASH) || !legacyPreferences.contains(KEY_PASSCODE_HASH)) {
+            return
+        }
+
+        preferences.edit().apply {
+            copyString(KEY_PASSCODE_HASH)
+            copyString(KEY_PASSCODE_SALT)
+            copyString(KEY_RECOVERY_QUESTION)
+            copyString(KEY_RECOVERY_ANSWER_HASH)
+            putBoolean(KEY_LOCK_ENABLED, legacyPreferences.getBoolean(KEY_LOCK_ENABLED, false))
+            putBoolean(KEY_BIOMETRIC_ENABLED, legacyPreferences.getBoolean(KEY_BIOMETRIC_ENABLED, false))
+            apply()
+        }
+
+        legacyPreferences.edit().clear().apply()
+    }
+
+    private fun SharedPreferences.Editor.copyString(key: String) {
+        legacyPreferences.getString(key, null)?.let { putString(key, it) }
+    }
+
     private companion object {
-        const val PREFERENCES_NAME = "radafiq_security"
+        const val LEGACY_PREFERENCES_NAME = "radafiq_security"
+        const val ENCRYPTED_PREFERENCES_NAME = "radafiq_security_secure"
         const val KEY_PASSCODE_HASH = "passcode_hash"
         const val KEY_PASSCODE_SALT = "passcode_salt"
         const val KEY_LOCK_ENABLED = "lock_enabled"
         const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
         const val KEY_RECOVERY_QUESTION = "recovery_question"
         const val KEY_RECOVERY_ANSWER_HASH = "recovery_answer_hash"
+        const val PASSCODE_LENGTH = 6
+        const val MIN_RECOVERY_ANSWER_LENGTH = 3
+        const val PBKDF2_ITERATIONS = 150_000
+        const val PBKDF2_KEY_LENGTH_BITS = 256
+        const val PBKDF2_PREFIX = "pbkdf2:"
     }
 }

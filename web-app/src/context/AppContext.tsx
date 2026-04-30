@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut as firebaseSignOut, User } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import {
   CardSummary,
@@ -19,9 +19,13 @@ import {
   loadSecurityStorage,
   saveSecurityStorage,
   clearSecurityStorage,
+  clearSecurityStorageForOtherUser,
   hashPasscode,
   hashRecoveryAnswer,
   generateSalt,
+  isPasscodeLockedOut,
+  recordPasscodeFailure,
+  clearPasscodeFailures,
 } from '../utils/security';
 
 // ── Settings storage ──────────────────────────────────────────────────────────
@@ -219,11 +223,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ── Auth listener ─────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Handle redirect result on page load (from signInWithRedirect)
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        // User signed in via redirect — auth state listener will handle the rest
+      }
+    }).catch((e: unknown) => {
+      const err = e as { code?: string };
+      if (err.code && err.code !== 'auth/no-auth-event') {
+        console.error('Redirect sign-in error:', err.code);
+      }
+    });
+
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       setAuthLoading(false);
 
       if (firebaseUser) {
+        clearSecurityStorageForOtherUser(firebaseUser.uid);
+        refreshSecurity();
+        repo.clearSecurityFromCloud(firebaseUser.uid).catch(console.error);
+
         // Start profile listener
         setProfileLoading(true);
         unsubscribeProfileRef.current?.();
@@ -243,6 +263,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (firstSnapshot) {
             firstSnapshot = false;
             setDataLoading(false);
+          } else {
+            // Live update received — briefly show synced
+            setSyncStatus({ state: 'SUCCESS', message: 'Synced.' });
+            if (syncResetTimerRef.current) clearTimeout(syncResetTimerRef.current);
+            syncResetTimerRef.current = setTimeout(() => {
+              setSyncStatus({ state: 'IDLE', message: '' });
+            }, 2000);
           }
         });
         unsubscribeDataRef.current = unsubs;
@@ -257,6 +284,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setCustomers([]);
         setDeletedCustomers([]);
         setDataLoading(false);
+        clearSecurityStorage();
+        refreshSecurity();
       }
     });
     return () => unsub();
@@ -295,15 +324,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const salt = generateSalt();
     const hash = await hashPasscode(passcode.trim(), salt);
     const answerHash = await hashRecoveryAnswer(recoveryAnswer, salt);
-    saveSecurityStorage({
+    const secData = {
       passcodeHash: hash,
       passcodeSalt: salt,
       lockEnabled: true,
       recoveryQuestion: recoveryQuestion.trim(),
       recoveryAnswerHash: answerHash,
-    });
+      ownerUid: user?.uid ?? '',
+      failedAttempts: 0,
+      lockoutUntil: 0,
+    };
+    saveSecurityStorage(secData);
     refreshSecurity();
-  }, [refreshSecurity]);
+  }, [refreshSecurity, user]);
 
   const updatePasscode = useCallback(async (current: string, newPasscode: string, recoveryQuestion: string, recoveryAnswer: string): Promise<boolean> => {
     const s = loadSecurityStorage();
@@ -311,14 +344,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (currentHash !== s.passcodeHash) return false;
     const newHash = await hashPasscode(newPasscode.trim(), s.passcodeSalt);
     const answerHash = await hashRecoveryAnswer(recoveryAnswer, s.passcodeSalt);
-    saveSecurityStorage({
+    const secData = {
       passcodeHash: newHash,
+      passcodeSalt: s.passcodeSalt,
+      lockEnabled: s.lockEnabled,
       recoveryQuestion: recoveryQuestion.trim(),
       recoveryAnswerHash: answerHash,
-    });
+      ownerUid: user?.uid ?? '',
+      failedAttempts: 0,
+      lockoutUntil: 0,
+    };
+    saveSecurityStorage(secData);
     refreshSecurity();
     return true;
-  }, [refreshSecurity]);
+  }, [refreshSecurity, user]);
 
   const clearPasscode = useCallback(() => {
     clearSecurityStorage();
@@ -331,11 +370,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSecurity]);
 
   const verifyPasscode = useCallback(async (passcode: string): Promise<boolean> => {
+    if (isPasscodeLockedOut()) return false;
     const s = loadSecurityStorage();
     const hash = await hashPasscode(passcode.trim(), s.passcodeSalt);
     const matches = hash === s.passcodeHash;
     if (matches) {
+      clearPasscodeFailures();
       setSecurityState(prev => ({ ...prev, isUnlocked: true }));
+    } else {
+      recordPasscodeFailure();
     }
     return matches;
   }, []);
@@ -345,7 +388,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const answerHash = await hashRecoveryAnswer(recoveryAnswer, s.passcodeSalt);
     if (answerHash !== s.recoveryAnswerHash) return false;
     const newHash = await hashPasscode(newPasscode.trim(), s.passcodeSalt);
-    saveSecurityStorage({ passcodeHash: newHash, lockEnabled: true });
+    saveSecurityStorage({ passcodeHash: newHash, lockEnabled: true, failedAttempts: 0, lockoutUntil: 0 });
     setSecurityState(prev => ({ ...prev, isUnlocked: true }));
     return true;
   }, []);
@@ -361,10 +404,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    const lockIfProtected = () => {
+      setSecurityState(prev => {
+        if (prev.lockEnabled && prev.hasPasscode) return { ...prev, isUnlocked: false };
+        return prev;
+      });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') lockIfProtected();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', lockIfProtected);
+    window.addEventListener('blur', lockIfProtected);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', lockIfProtected);
+      window.removeEventListener('blur', lockIfProtected);
+    };
+  }, []);
+
   // ── Auth operations ───────────────────────────────────────────────────────
 
   const signInWithGoogle = useCallback(async () => {
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      // If popup blocked, fall back to redirect
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        console.error('Sign-in error:', err.code, err.message);
+        throw e;
+      }
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -670,16 +745,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ── Sync status ───────────────────────────────────────────────────────────
 
   const triggerSync = useCallback(() => {
+    if (!user) {
+      setSyncStatus({ state: 'ERROR', message: 'Not signed in.' });
+      return;
+    }
+    if (syncStatus.state === 'SYNCING') return;
+
     setSyncStatus({ state: 'SYNCING', message: 'Syncing...' });
     if (syncResetTimerRef.current) clearTimeout(syncResetTimerRef.current);
-    // Simulate sync (actual Drive sync would require OAuth token)
-    setTimeout(() => {
-      setSyncStatus({ state: 'SUCCESS', message: 'Data is up to date.' });
-      syncResetTimerRef.current = setTimeout(() => {
-        setSyncStatus({ state: 'IDLE', message: '' });
-      }, 4000);
-    }, 1500);
-  }, []);
+
+    // Re-subscribe Firestore listeners to force a fresh pull
+    unsubscribeDataRef.current.forEach(u => u());
+    let firstSnapshot = true;
+    const unsubs = repo.listenAllData(user.uid, (data) => {
+      setCards(data.accounts);
+      setCustomers(data.customers);
+      setDeletedCustomers(data.deletedCustomers);
+      if (firstSnapshot) {
+        firstSnapshot = false;
+        setSyncStatus({ state: 'SUCCESS', message: 'Synced successfully.' });
+        syncResetTimerRef.current = setTimeout(() => {
+          setSyncStatus({ state: 'IDLE', message: '' });
+        }, 4000);
+      }
+    });
+    unsubscribeDataRef.current = unsubs;
+  }, [user, syncStatus.state]);
 
   // BUG-12 fix: cleanup timer on unmount
   useEffect(() => {

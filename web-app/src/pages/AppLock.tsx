@@ -207,10 +207,14 @@ export default function AppLock() {
                 type="button"
                 aria-label={isBack ? 'Backspace' : `Digit ${key}`}
                 style={numpadBtn(disabled, isBack)}
-                onClick={() => {
+                onPointerDown={(e) => {
+                  e.preventDefault();
                   if (disabled) return;
                   if (isBack) pressBackspace();
                   else pressDigit(key);
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
                 }}
               >
                 {key}

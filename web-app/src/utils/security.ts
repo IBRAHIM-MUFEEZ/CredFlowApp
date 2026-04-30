@@ -1,5 +1,9 @@
 // Passcode hashing using Web Crypto API
-// Uses PBKDF2 (100,000 iterations) — slow by design to resist brute-force attacks
+// Uses PBKDF2, slow by design to resist brute-force attacks.
+
+const PBKDF2_ITERATIONS = 150_000;
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MS = 60_000;
 
 export async function hashPasscode(passcode: string, salt: string): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
@@ -13,7 +17,7 @@ export async function hashPasscode(passcode: string, salt: string): Promise<stri
     {
       name: 'PBKDF2',
       salt: new TextEncoder().encode(salt),
-      iterations: 100_000,
+      iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
     keyMaterial,
@@ -36,7 +40,7 @@ export async function hashRecoveryAnswer(answer: string, salt: string): Promise<
     {
       name: 'PBKDF2',
       salt: new TextEncoder().encode(`${salt}:recovery`),
-      iterations: 100_000,
+      iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
     keyMaterial,
@@ -63,15 +67,18 @@ interface SecurityStorage {
   lockEnabled: boolean;
   recoveryQuestion: string;
   recoveryAnswerHash: string;
+  ownerUid?: string;
+  failedAttempts?: number;
+  lockoutUntil?: number;
 }
 
 export function loadSecurityStorage(): SecurityStorage {
   try {
     const raw = localStorage.getItem(SECURITY_KEY);
-    if (!raw) return { passcodeHash: '', passcodeSalt: '', lockEnabled: false, recoveryQuestion: '', recoveryAnswerHash: '' };
-    return JSON.parse(raw);
+    if (!raw) return emptySecurityStorage();
+    return { ...emptySecurityStorage(), ...JSON.parse(raw) };
   } catch {
-    return { passcodeHash: '', passcodeSalt: '', lockEnabled: false, recoveryQuestion: '', recoveryAnswerHash: '' };
+    return emptySecurityStorage();
   }
 }
 
@@ -82,4 +89,42 @@ export function saveSecurityStorage(data: Partial<SecurityStorage>): void {
 
 export function clearSecurityStorage(): void {
   localStorage.removeItem(SECURITY_KEY);
+}
+
+export function clearSecurityStorageForOtherUser(uid: string): void {
+  const existing = loadSecurityStorage();
+  if (existing.passcodeHash && existing.ownerUid !== uid) {
+    clearSecurityStorage();
+  }
+}
+
+export function isPasscodeLockedOut(): boolean {
+  const { lockoutUntil = 0 } = loadSecurityStorage();
+  return lockoutUntil > Date.now();
+}
+
+export function recordPasscodeFailure(): void {
+  const existing = loadSecurityStorage();
+  const failedAttempts = (existing.failedAttempts ?? 0) + 1;
+  saveSecurityStorage({
+    failedAttempts,
+    lockoutUntil: failedAttempts >= MAX_FAILED_ATTEMPTS ? Date.now() + LOCKOUT_MS : 0,
+  });
+}
+
+export function clearPasscodeFailures(): void {
+  saveSecurityStorage({ failedAttempts: 0, lockoutUntil: 0 });
+}
+
+function emptySecurityStorage(): SecurityStorage {
+  return {
+    passcodeHash: '',
+    passcodeSalt: '',
+    lockEnabled: false,
+    recoveryQuestion: '',
+    recoveryAnswerHash: '',
+    ownerUid: '',
+    failedAttempts: 0,
+    lockoutUntil: 0,
+  };
 }

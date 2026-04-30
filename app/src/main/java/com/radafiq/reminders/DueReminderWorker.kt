@@ -1,13 +1,17 @@
 ﻿package com.radafiq.reminders
 
+import android.annotation.SuppressLint
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.radafiq.MainActivity
@@ -60,10 +64,27 @@ class DueReminderWorker(
             .setContentIntent(pendingIntent)
             .build()
 
-        NotificationManagerCompat.from(applicationContext)
-            .notify(notificationId, notification)
+        if (!canPostNotifications()) return Result.success()
+
+        postNotification(notificationId, notification)
 
         return Result.success()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun postNotification(notificationId: Int, notification: android.app.Notification) {
+        runCatching {
+            NotificationManagerCompat.from(applicationContext)
+                .notify(notificationId, notification)
+        }
+    }
+
+    private fun canPostNotifications(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                applicationContext,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun createChannel() {
