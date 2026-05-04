@@ -739,6 +739,11 @@ p { font-size: 0.9375rem; }
 .txn-info { flex: 1; min-width: 0; }
 .txn-name { font-weight: 600; font-size: 0.9375rem; }
 .txn-meta { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; }
+.txn-balance {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: 3px;
+}
 .txn-amount { font-weight: 700; font-size: 1rem; text-align: right; flex-shrink: 0; }
 
 /* ── Alphabet index ────────────────────────────────────────────────────────── */

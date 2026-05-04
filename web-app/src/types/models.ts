@@ -144,6 +144,8 @@ export interface SavingsEntry {
   type: 'deposit' | 'withdrawal';
   note: string;
   date: string;
+  bankAccountId: string;
+  bankAccountName: string;
 }
 
 export interface CustomerSummary {

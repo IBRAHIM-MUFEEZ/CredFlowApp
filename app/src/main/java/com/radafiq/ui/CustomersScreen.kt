@@ -776,7 +776,21 @@ fun CustomerCard(
                     personName = personName
                 )
                 transactionToEdit = null
-            }
+            },
+            onSaveSplit = if (transaction.isEmi) { transactionName, transactionDate, splits ->
+                vm.convertEmiInstallmentToSplit(
+                    originalTransactionId = transaction.id,
+                    customerId = customer.id,
+                    customerName = customer.name,
+                    transactionName = transactionName,
+                    transactionDate = transactionDate,
+                    emiGroupId = transaction.emiGroupId,
+                    emiIndex = transaction.emiIndex,
+                    emiTotal = transaction.emiTotal,
+                    splits = splits
+                )
+                transactionToEdit = null
+            } else null
         )
     }
 
@@ -908,6 +922,41 @@ fun CustomerDetailScreen(
     }
     val groupedTransactions = filteredTransactions
 
+    // Account breakdown — group all visible transactions by account name+kind
+    data class AccountBreakdown(
+        val accountName: String,
+        val accountKind: AccountKind,
+        val totalUsed: Double,
+        val totalDue: Double
+    )
+    val accountBreakdowns = remember(customer.transactions) {
+        val today = LocalDate.now()
+        val visible = customer.transactions.filter { it.isVisibleInTransactions(today) }
+        val map = linkedMapOf<String, AccountBreakdown>()
+        visible.forEach { t ->
+            val key = "${t.accountKind.name}::${t.accountId}"
+            val due = if (t.isSettled) 0.0 else (t.amount - t.partialPaidAmount).coerceAtLeast(0.0)
+            val existing = map[key]
+            if (existing == null) {
+                map[key] = AccountBreakdown(
+                    accountName = t.accountName,
+                    accountKind = t.accountKind,
+                    totalUsed = t.amount,
+                    totalDue = due
+                )
+            } else {
+                map[key] = existing.copy(
+                    totalUsed = existing.totalUsed + t.amount,
+                    totalDue = existing.totalDue + due
+                )
+            }
+        }
+        map.values.sortedWith(
+            compareByDescending<AccountBreakdown> { it.totalDue }
+                .thenByDescending { it.totalUsed }
+        )
+    }
+
     RadafiqBackground {
         Scaffold(
             containerColor = Color.Transparent,
@@ -1015,6 +1064,94 @@ fun CustomerDetailScreen(
                             value = formatMoney(customer.savingsBalance),
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+                }
+
+                // Account breakdown — credit card and bank account totals
+                if (accountBreakdowns.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Account Breakdown",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            accountBreakdowns.forEach { breakdown ->
+                                val accent = accountAccent(breakdown.accountKind)
+                                val kindLabel = when (breakdown.accountKind) {
+                                    AccountKind.CREDIT_CARD -> "Credit Card"
+                                    AccountKind.BANK_ACCOUNT -> "Bank Account"
+                                    else -> breakdown.accountKind.label
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(accent.copy(alpha = 0.07f))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(accent)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = breakdown.accountName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = kindLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = accent
+                                            )
+                                        }
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = formatMoney(breakdown.totalUsed),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = accent
+                                        )
+                                        Text(
+                                            text = if (breakdown.totalDue > 0.0)
+                                                "Due ${formatMoney(breakdown.totalDue)}"
+                                            else "✓ Settled",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (breakdown.totalDue > 0.0) warningColor()
+                                                    else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1170,7 +1307,21 @@ fun CustomerDetailScreen(
                     personName = personName
                 )
                 transactionToEdit = null
-            }
+            },
+            onSaveSplit = if (transaction.isEmi) { transactionName, transactionDate, splits ->
+                vm.convertEmiInstallmentToSplit(
+                    originalTransactionId = transaction.id,
+                    customerId = customer.id,
+                    customerName = customer.name,
+                    transactionName = transactionName,
+                    transactionDate = transactionDate,
+                    emiGroupId = transaction.emiGroupId,
+                    emiIndex = transaction.emiIndex,
+                    emiTotal = transaction.emiTotal,
+                    splits = splits
+                )
+                transactionToEdit = null
+            } else null
         )
     }
 
@@ -1322,6 +1473,7 @@ fun TransactionRow(
     val lineThrough = if (transaction.isSettled) TextDecoration.LineThrough else TextDecoration.None
     val contentAlpha = if (transaction.isSettled) 0.56f else 1f
     var showPartialPaymentDialog by remember { mutableStateOf(false) }
+    var showSettleConfirm by remember { mutableStateOf<Boolean?>(null) } // null=hidden, true=marking paid, false=marking unpaid
     val remaining = (transaction.amount - transaction.partialPaidAmount).coerceAtLeast(0.0)
 
     Column(
@@ -1399,7 +1551,7 @@ fun TransactionRow(
                 ) {
                     Checkbox(
                         checked = transaction.isSettled,
-                        onCheckedChange = { onSettledChange(it) },
+                        onCheckedChange = { newValue -> showSettleConfirm = newValue },
                         modifier = Modifier.size(32.dp)
                     )
                     IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
@@ -1480,6 +1632,41 @@ fun TransactionRow(
             onSave = { amount ->
                 onPartialPayment(amount)
                 showPartialPaymentDialog = false
+            }
+        )
+    }
+
+    // Settle / Unsettle confirmation dialog
+    showSettleConfirm?.let { markingAsPaid ->
+        AlertDialog(
+            onDismissRequest = { showSettleConfirm = null },
+            title = {
+                Text(if (markingAsPaid) "Mark as Paid?" else "Mark as Unpaid?")
+            },
+            text = {
+                Text(
+                    if (markingAsPaid)
+                        "Mark \"${transaction.name}\" as fully paid and settled?"
+                    else
+                        "Mark \"${transaction.name}\" as unpaid? This will restore it to outstanding."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSettleConfirm = null
+                    onSettledChange(markingAsPaid)
+                }) {
+                    Text(
+                        if (markingAsPaid) "Yes, Mark Paid" else "Yes, Mark Unpaid",
+                        color = if (markingAsPaid) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSettleConfirm = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -1676,6 +1863,24 @@ fun TransactionEditorDialog(
     var splitEnabled by remember { mutableStateOf(if (hasDraft) draft.splitEnabled else false) }
     var splitEntries by remember {
         mutableStateOf(if (hasDraft && draft.splitEntries.isNotEmpty()) draft.splitEntries else listOf(SplitEntry(), SplitEntry()))
+    }
+
+    // EMI-to-split conversion state — only when editing an existing EMI installment
+    val isEditingEmi = transaction != null && transaction.isEmi
+    var emiSplitEnabled by remember(transaction?.id) { mutableStateOf(false) }
+    var emiSplitEntries by remember(transaction?.id) {
+        mutableStateOf(
+            listOf(
+                SplitEntry(
+                    accountKind = transaction?.accountKind ?: AccountKind.CREDIT_CARD,
+                    accountId = transaction?.accountId.orEmpty(),
+                    accountName = transaction?.accountName.orEmpty(),
+                    personName = transaction?.personName.orEmpty(),
+                    amount = transaction?.amount?.toString().orEmpty()
+                ),
+                SplitEntry()
+            )
+        )
     }
 
     // Persist draft to ViewModel on every state change (new transactions only)
@@ -1902,6 +2107,74 @@ fun TransactionEditorDialog(
                     }
                 }
 
+                // ── EMI installment split toggle ──────────────────────────────
+                // Only shown when editing an existing EMI transaction
+                if (isEditingEmi && onSaveSplit != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Split this installment",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Distribute EMI ${transaction!!.emiIndex + 1}/${transaction.emiTotal} across multiple accounts or persons",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = emiSplitEnabled,
+                            onCheckedChange = { emiSplitEnabled = it }
+                        )
+                    }
+
+                    if (emiSplitEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        emiSplitEntries.forEachIndexed { index, entry ->
+                            SplitEntryRow(
+                                index = index,
+                                entry = entry,
+                                selectedAccountIds = selectedAccountIds,
+                                onEntryChange = { updated ->
+                                    emiSplitEntries = emiSplitEntries.toMutableList().also { it[index] = updated }
+                                },
+                                onRemove = if (emiSplitEntries.size > 1) ({
+                                    emiSplitEntries = emiSplitEntries.toMutableList().also { it.removeAt(index) }
+                                }) else null
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        val emiSplitTotal = emiSplitEntries.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
+                        val emiOriginal = transaction!!.amount
+                        Text(
+                            text = "Split Total: ${formatMoney(emiSplitTotal)} / ${formatMoney(emiOriginal)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (kotlin.math.abs(emiSplitTotal - emiOriginal) < 0.01)
+                                MaterialTheme.colorScheme.primary else warningColor(),
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        TextButton(
+                            onClick = { emiSplitEntries = emiSplitEntries + SplitEntry() },
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add another account")
+                        }
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2123,6 +2396,12 @@ fun TransactionEditorDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    // EMI installment being converted to split
+                    if (isEditingEmi && emiSplitEnabled && onSaveSplit != null) {
+                        onSaveSplit.invoke(transactionName, transactionDate, emiSplitEntries)
+                        onDismiss()
+                        return@TextButton
+                    }
                     if (splitEnabled && transaction == null) {
                         // Save as split transactions — amount comes from split entries
                         onSaveSplit?.invoke(transactionName, transactionDate, splitEntries)
@@ -2163,9 +2442,11 @@ fun TransactionEditorDialog(
                 },
                 enabled = transactionName.isNotBlank() &&
                     transactionDate.isNotBlank() &&
-                    (splitEnabled && transaction == null && onSaveSplit != null &&
+                    (isEditingEmi && emiSplitEnabled && onSaveSplit != null &&
+                        emiSplitEntries.count { (it.amount.toDoubleOrNull() ?: 0.0) > 0.0 } >= 1 ||
+                     splitEnabled && transaction == null && onSaveSplit != null &&
                         splitEntries.count { (it.amount.toDoubleOrNull() ?: 0.0) > 0.0 } >= 2 ||
-                     !splitEnabled && calculatedAmount != null &&
+                     !splitEnabled && !(isEditingEmi && emiSplitEnabled) && calculatedAmount != null &&
                         (selectedKind == AccountKind.PERSON && personName.isNotBlank() ||
                          selectedKind != AccountKind.PERSON && selectedAccount != null)) &&
                     (!emiEnabled || emiMonthsInt != null)
@@ -2422,6 +2703,7 @@ private fun SplitTransactionRow(
     val lineThrough = if (allSettled) TextDecoration.LineThrough else TextDecoration.None
     val contentAlpha = if (allSettled) 0.56f else 1f
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showSettleConfirm by remember { mutableStateOf<Boolean?>(null) } // null=hidden, true=marking paid, false=marking unpaid
 
     Column(
         modifier = Modifier
@@ -2495,7 +2777,7 @@ private fun SplitTransactionRow(
                 }
                 Checkbox(
                     checked = allSettled,
-                    onCheckedChange = { onSettledChangeAll(it) },
+                    onCheckedChange = { newValue -> showSettleConfirm = newValue },
                     modifier = Modifier.padding(start = 4.dp)
                 )
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
@@ -2589,6 +2871,41 @@ private fun SplitTransactionRow(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Settle / Unsettle confirmation dialog for split group
+    showSettleConfirm?.let { markingAsPaid ->
+        AlertDialog(
+            onDismissRequest = { showSettleConfirm = null },
+            title = {
+                Text(if (markingAsPaid) "Mark all as Paid?" else "Mark all as Unpaid?")
+            },
+            text = {
+                Text(
+                    if (markingAsPaid)
+                        "Mark all ${group.splits.size} entries of \"${group.name}\" as fully paid and settled?"
+                    else
+                        "Mark all ${group.splits.size} entries of \"${group.name}\" as unpaid? This will restore them to outstanding."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSettleConfirm = null
+                    onSettledChangeAll(markingAsPaid)
+                }) {
+                    Text(
+                        if (markingAsPaid) "Yes, Mark Paid" else "Yes, Mark Unpaid",
+                        color = if (markingAsPaid) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSettleConfirm = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }

@@ -156,7 +156,9 @@ data class SavingsEntry(
     val amount: Double,
     val type: SavingsType,
     val note: String = "",
-    val date: String
+    val date: String,
+    val bankAccountId: String = "",
+    val bankAccountName: String = ""
 )
 
 enum class SavingsType(val label: String, val storageValue: String) {

@@ -137,6 +137,8 @@ function buildAppData(
       type: ((data.type as string) === 'withdrawal' ? 'withdrawal' : 'deposit') as SavingsType,
       note: (data.note as string) ?? '',
       date: (data.date as string) ?? '',
+      bankAccountId: (data.bankAccountId as string) ?? '',
+      bankAccountName: (data.bankAccountName as string) ?? '',
     };
   });
 
@@ -468,6 +470,24 @@ export async function addSplitTransactionsBatch(uid: string, splits: Record<stri
   await batch.commit();
 }
 
+/**
+ * Convert a single EMI installment into split entries.
+ * Deletes the original transaction and creates new split docs that preserve
+ * the emiGroupId/emiIndex/emiTotal so the installment still belongs to the EMI plan.
+ */
+export async function convertEmiInstallmentToSplit(
+  uid: string,
+  originalTransactionId: string,
+  splits: Record<string, unknown>[]
+): Promise<void> {
+  const batch = writeBatch(db);
+  // Delete the original single-account EMI installment
+  batch.delete(doc(transactionsCol(uid), originalTransactionId));
+  // Create the replacement split docs (each carries emiGroupId etc.)
+  splits.forEach(data => batch.set(doc(transactionsCol(uid)), data));
+  await batch.commit();
+}
+
 export async function addEmiTransactionsBatch(uid: string, instalments: Record<string, unknown>[]): Promise<void> {
   const batch = writeBatch(db);
   instalments.forEach(data => batch.set(doc(transactionsCol(uid)), data));
@@ -580,9 +600,11 @@ export async function addSavingsEntry(
   amount: number,
   type: SavingsType,
   note: string,
-  date: string
+  date: string,
+  bankAccountId: string = '',
+  bankAccountName: string = ''
 ): Promise<void> {
-  await addDoc(savingsCol(uid), { customerId, customerName, amount, type, note, date });
+  await addDoc(savingsCol(uid), { customerId, customerName, amount, type, note, date, bankAccountId, bankAccountName });
 }
 
 export async function deleteSavingsEntry(uid: string, entryId: string): Promise<void> {

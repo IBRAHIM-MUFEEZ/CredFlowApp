@@ -26,7 +26,15 @@ import {
   isPasscodeLockedOut,
   recordPasscodeFailure,
   clearPasscodeFailures,
+  getPasskeyCredentialId,
+  savePasskeyStorage,
+  clearPasskeyStorage,
 } from '../utils/security';
+import {
+  registerPasskey as webAuthnRegister,
+  authenticatePasskey as webAuthnAuthenticate,
+  isPlatformAuthenticatorAvailable,
+} from '../utils/passkey';
 
 // ── Settings storage ──────────────────────────────────────────────────────────
 
@@ -108,6 +116,12 @@ interface AppContextValue {
   unlock: () => void;
   lock: () => void;
 
+  // Passkey (WebAuthn)
+  hasPasskey: boolean;
+  registerPasskey: () => Promise<void>;
+  authenticateWithPasskey: () => Promise<boolean>;
+  removePasskey: () => void;
+
   // Customer operations
   addCustomer: (name: string) => Promise<string>;
   deleteCustomer: (id: string, name: string) => Promise<void>;
@@ -147,6 +161,17 @@ interface AppContextValue {
     transactionDate: string;
     splits: SplitEntry[];
   }) => Promise<void>;
+  convertEmiInstallmentToSplit: (params: {
+    originalTransactionId: string;
+    customerId: string;
+    customerName: string;
+    transactionName: string;
+    transactionDate: string;
+    emiGroupId: string;
+    emiIndex: number;
+    emiTotal: number;
+    splits: SplitEntry[];
+  }) => Promise<void>;
   updateTransaction: (params: {
     transactionId: string;
     transactionName: string;
@@ -176,7 +201,7 @@ interface AppContextValue {
   addPayment: (accountId: string, accountName: string, accountKind: AccountKind, amount: string) => Promise<void>;
 
   // Savings operations
-  addSavingsDeposit: (customerId: string, customerName: string, amount: string, note: string) => Promise<void>;
+  addSavingsDeposit: (customerId: string, customerName: string, amount: string, note: string, bankAccountId?: string, bankAccountName?: string) => Promise<void>;
   addSavingsWithdrawal: (customerId: string, customerName: string, amount: string, note: string) => Promise<void>;
   deleteSavingsEntry: (entryId: string) => Promise<void>;
 
@@ -212,6 +237,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dataLoading, setDataLoading] = useState(true);
   const [settings, setSettingsState] = useState<AppSettings>(loadSettings);
   const [security, setSecurityState] = useState<AppSecurityState>(loadSecurityState);
+  const [hasPasskey, setHasPasskey] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState('');
   const [backupInProgress, setBackupInProgress] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ state: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR'; message: string }>({ state: 'IDLE', message: '' });
@@ -242,6 +268,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         clearSecurityStorageForOtherUser(firebaseUser.uid);
         refreshSecurity();
+        // Refresh passkey state for this user
+        setHasPasskey(!!getPasskeyCredentialId(firebaseUser.uid));
         repo.clearSecurityFromCloud(firebaseUser.uid).catch(console.error);
 
         // Start profile listener
@@ -285,6 +313,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setDeletedCustomers([]);
         setDataLoading(false);
         clearSecurityStorage();
+        setHasPasskey(false);
         refreshSecurity();
       }
     });
@@ -404,24 +433,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // ── Passkey (WebAuthn) helpers ────────────────────────────────────────────
+
+  const registerPasskey = useCallback(async () => {
+    if (!user) throw new Error('Must be signed in to register a passkey.');
+    const displayName = profile?.displayName || user.email || user.uid;
+    const { credentialId } = await webAuthnRegister(user.uid, displayName);
+    savePasskeyStorage(credentialId, user.uid);
+    setHasPasskey(true);
+  }, [user, profile]);
+
+  const authenticateWithPasskey = useCallback(async (): Promise<boolean> => {
+    if (!user) return false;
+    const credentialId = getPasskeyCredentialId(user.uid);
+    if (!credentialId) return false;
+    try {
+      const ok = await webAuthnAuthenticate(credentialId);
+      if (ok) setSecurityState(prev => ({ ...prev, isUnlocked: true }));
+      return ok;
+    } catch {
+      return false;
+    }
+  }, [user]);
+
+  const removePasskey = useCallback(() => {
+    clearPasskeyStorage();
+    setHasPasskey(false);
+  }, []);
+
   useEffect(() => {
+    // ── Lock-on-idle strategy ─────────────────────────────────────────────
+    // We want to lock when the PC is locked/slept/shut down, but NOT when the
+    // user simply switches tabs or alt-tabs to another window.
+    //
+    // Approach:
+    //   • On `visibilitychange → hidden`: record the timestamp but do NOT lock yet.
+    //   • On `visibilitychange → visible`: if the page was hidden for longer than
+    //     LOCK_AFTER_MS (5 minutes), lock. Short absences (tab switch, alt-tab)
+    //     are ignored.
+    //   • On `pagehide` with persisted=false: the page is being fully unloaded
+    //     (close tab, navigate away, PC shutdown). Lock immediately so the next
+    //     load starts locked.
+    //   • `blur` is removed — it fires on every alt-tab and is too aggressive.
+    //
+    // PC lock/sleep causes the browser to hide the page for a long time, so
+    // when the user unlocks the PC and returns to the tab, LOCK_AFTER_MS will
+    // have elapsed and the app locks correctly.
+
+    const LOCK_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+    const HIDDEN_TS_KEY = 'radafiq_hidden_at';
+
     const lockIfProtected = () => {
       setSecurityState(prev => {
         if (prev.lockEnabled && prev.hasPasscode) return { ...prev, isUnlocked: false };
         return prev;
       });
     };
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') lockIfProtected();
+      if (document.visibilityState === 'hidden') {
+        // Record when the page was hidden
+        sessionStorage.setItem(HIDDEN_TS_KEY, String(Date.now()));
+      } else {
+        // Page became visible again — check how long it was hidden
+        const hiddenAt = parseInt(sessionStorage.getItem(HIDDEN_TS_KEY) ?? '0', 10);
+        sessionStorage.removeItem(HIDDEN_TS_KEY);
+        if (hiddenAt > 0 && Date.now() - hiddenAt >= LOCK_AFTER_MS) {
+          lockIfProtected();
+        }
+      }
+    };
+
+    const handlePageHide = (e: PageTransitionEvent) => {
+      // persisted=false means the page is being fully unloaded (not bfcache)
+      if (!e.persisted) {
+        lockIfProtected();
+      }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pagehide', lockIfProtected);
-    window.addEventListener('blur', lockIfProtected);
+    window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pagehide', lockIfProtected);
-      window.removeEventListener('blur', lockIfProtected);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
 
@@ -596,6 +690,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (docs.length > 0) await repo.addSplitTransactionsBatch(user.uid, docs);
   }, [user]);
 
+  const convertEmiInstallmentToSplit = useCallback(async (params: {
+    originalTransactionId: string;
+    customerId: string;
+    customerName: string;
+    transactionName: string;
+    transactionDate: string;
+    emiGroupId: string;
+    emiIndex: number;
+    emiTotal: number;
+    splits: SplitEntry[];
+  }) => {
+    if (!user || params.splits.length === 0) return;
+    const splitGroupId = crypto.randomUUID();
+
+    const docs = params.splits.flatMap(split => {
+      const amount = parseFloat(split.amount);
+      if (isNaN(amount) || amount <= 0) return [];
+      const isPerson = split.accountKind === 'person';
+      const accountId = isPerson
+        ? `person_${split.personName.trim().toLowerCase().replace(/\s+/g, '_')}`
+        : split.accountId || split.accountName.trim().toLowerCase().replace(/\s+/g, '_');
+      const accountName = isPerson ? split.personName.trim() : split.accountName.trim();
+      if (!accountName) return [];
+
+      const doc: Record<string, unknown> = {
+        customerId: params.customerId,
+        customerName: params.customerName,
+        transactionName: params.transactionName,
+        accountId,
+        accountName,
+        accountType: split.accountKind,
+        amount,
+        transactionDate: params.transactionDate,
+        givenDate: params.transactionDate,
+        splitGroupId,
+        // Preserve EMI group membership so this installment still belongs to the plan
+        emiGroupId: params.emiGroupId,
+        emiIndex: params.emiIndex,
+        emiTotal: params.emiTotal,
+      };
+      if (isPerson && split.personName) doc.personName = split.personName.trim();
+      return [doc];
+    });
+
+    if (docs.length > 0) {
+      await repo.convertEmiInstallmentToSplit(user.uid, params.originalTransactionId, docs);
+    }
+  }, [user]);
+
   const updateTransaction = useCallback(async (params: {
     transactionId: string;
     transactionName: string;
@@ -670,11 +813,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ── Savings operations ────────────────────────────────────────────────────
 
-  const addSavingsDeposit = useCallback(async (customerId: string, customerName: string, amount: string, note: string) => {
+  const addSavingsDeposit = useCallback(async (customerId: string, customerName: string, amount: string, note: string, bankAccountId: string = '', bankAccountName: string = '') => {
     if (!user) return;
     const parsed = parseFloat(amount);
     if (isNaN(parsed) || parsed <= 0) return;
-    await repo.addSavingsEntry(user.uid, customerId, customerName, parsed, 'deposit', note.trim(), todayString());
+    await repo.addSavingsEntry(user.uid, customerId, customerName, parsed, 'deposit', note.trim(), todayString(), bankAccountId, bankAccountName);
   }, [user]);
 
   const addSavingsWithdrawal = useCallback(async (customerId: string, customerName: string, amount: string, note: string) => {
@@ -805,6 +948,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     resetPasscodeWithRecovery,
     unlock,
     lock,
+    hasPasskey,
+    registerPasskey,
+    authenticateWithPasskey,
+    removePasskey,
     addCustomer,
     deleteCustomer,
     restoreCustomer,
@@ -813,6 +960,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addTransaction,
     addEmiTransactions,
     addSplitTransactions,
+    convertEmiInstallmentToSplit,
     updateTransaction,
     deleteTransaction,
     addPartialPayment,

@@ -565,6 +565,56 @@ class MainViewModel(
         }
     }
 
+    fun convertEmiInstallmentToSplit(
+        originalTransactionId: String,
+        customerId: String,
+        customerName: String,
+        transactionName: String,
+        transactionDate: String,
+        emiGroupId: String,
+        emiIndex: Int,
+        emiTotal: Int,
+        splits: List<SplitEntry>
+    ) {
+        if (splits.isEmpty()) return
+        val splitGroupId = java.util.UUID.randomUUID().toString()
+        viewModelScope.launch {
+            val docs = splits.mapNotNull { split ->
+                val amount = split.amount.toDoubleOrNull() ?: return@mapNotNull null
+                if (amount <= 0.0) return@mapNotNull null
+                val isPerson = split.accountKind == com.radafiq.data.models.AccountKind.PERSON
+                val accountId = when {
+                    isPerson -> "person_${split.personName.trim().lowercase().replace(" ", "_")}"
+                    split.accountId.isNotBlank() -> split.accountId
+                    split.accountName.isNotBlank() -> split.accountName.trim().lowercase().replace(" ", "_")
+                    else -> return@mapNotNull null
+                }
+                val accountName = if (isPerson) split.personName.trim() else split.accountName.trim()
+                if (accountName.isBlank()) return@mapNotNull null
+                mutableMapOf<String, Any>(
+                    "customerId"      to customerId,
+                    "customerName"    to customerName,
+                    "transactionName" to transactionName,
+                    "accountId"       to accountId,
+                    "accountName"     to accountName,
+                    "accountType"     to split.accountKind.storageValue,
+                    "amount"          to amount,
+                    "transactionDate" to transactionDate.ifBlank { LocalDate.now().toString() },
+                    "givenDate"       to transactionDate.ifBlank { LocalDate.now().toString() },
+                    "splitGroupId"    to splitGroupId,
+                    "emiGroupId"      to emiGroupId,
+                    "emiIndex"        to emiIndex,
+                    "emiTotal"        to emiTotal
+                ).also { data ->
+                    if (isPerson && split.personName.isNotBlank()) data["personName"] = split.personName.trim()
+                }
+            }
+            if (docs.isNotEmpty()) {
+                repository.convertEmiInstallmentToSplit(originalTransactionId, docs)
+            }
+        }
+    }
+
     fun addPayment(accountId: String, accountName: String, accountKind: AccountKind, amount: String) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
         viewModelScope.launch {
@@ -580,7 +630,7 @@ class MainViewModel(
 
     // ── Savings ───────────────────────────────────────────────────────────────
 
-    fun addSavingsDeposit(customerId: String, customerName: String, amount: String, note: String) {
+    fun addSavingsDeposit(customerId: String, customerName: String, amount: String, note: String, bankAccountId: String = "", bankAccountName: String = "") {
         val parsed = amount.toDoubleOrNull() ?: return
         if (parsed <= 0.0) return
         viewModelScope.launch {
@@ -590,7 +640,9 @@ class MainViewModel(
                 amount = parsed,
                 type = com.radafiq.data.models.SavingsType.DEPOSIT,
                 note = note.trim(),
-                date = LocalDate.now().toString()
+                date = LocalDate.now().toString(),
+                bankAccountId = bankAccountId,
+                bankAccountName = bankAccountName
             )
         }
     }

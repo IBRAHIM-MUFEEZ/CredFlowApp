@@ -453,11 +453,13 @@ class MainActivity : FragmentActivity() {
                         stopTimestamp = System.currentTimeMillis()
                     }
                     Lifecycle.Event.ON_START -> {
-                        // App came back — check if it was gone long enough to warrant locking
+                        // App came back — lock if it was backgrounded for more than 1.5 minutes.
+                        // This covers: device lock/sleep, home button, recent apps, app killed.
+                        // It does NOT fire on in-app navigation (tab switches, screen changes).
                         val elapsed = System.currentTimeMillis() - stopTimestamp
                         if (
                             stopTimestamp > 0 &&
-                            elapsed > 2_000L && // only lock if backgrounded for >2 seconds
+                            elapsed > 90_000L && // 1.5 minutes inactivity threshold
                             securityState.lockEnabled &&
                             securityState.hasPasscode &&
                             !externalDocumentFlowInProgress

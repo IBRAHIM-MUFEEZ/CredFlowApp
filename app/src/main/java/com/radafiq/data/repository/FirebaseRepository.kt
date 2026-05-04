@@ -202,6 +202,25 @@ class FirebaseRepository(
         batch.commit().await()
     }
 
+    /**
+     * Convert a single EMI installment into split entries.
+     * Deletes the original transaction and creates new split docs that preserve
+     * emiGroupId/emiIndex/emiTotal so the installment still belongs to the EMI plan.
+     */
+    suspend fun convertEmiInstallmentToSplit(
+        originalTransactionId: String,
+        splits: List<Map<String, Any>>
+    ) {
+        val batch = db.batch()
+        // Delete the original single-account EMI installment
+        batch.delete(transactionsCollection().document(originalTransactionId))
+        // Create replacement split docs (each carries emiGroupId etc.)
+        splits.forEach { data ->
+            batch.set(transactionsCollection().document(), data)
+        }
+        batch.commit().await()
+    }
+
     suspend fun addEmiTransactionsBatch(instalments: List<Map<String, Any>>) {
         // Firestore batch limit is 500 writes; EMI plans are well within that
         val batch = db.batch()
@@ -289,16 +308,20 @@ class FirebaseRepository(
         amount: Double,
         type: SavingsType,
         note: String,
-        date: String
+        date: String,
+        bankAccountId: String = "",
+        bankAccountName: String = ""
     ) {
         savingsCollection().add(
             hashMapOf(
-                "customerId"   to customerId,
-                "customerName" to customerName,
-                "amount"       to amount,
-                "type"         to type.storageValue,
-                "note"         to note,
-                "date"         to date
+                "customerId"      to customerId,
+                "customerName"    to customerName,
+                "amount"          to amount,
+                "type"            to type.storageValue,
+                "note"            to note,
+                "date"            to date,
+                "bankAccountId"   to bankAccountId,
+                "bankAccountName" to bankAccountName
             )
         ).await()
     }
@@ -768,7 +791,9 @@ class FirebaseRepository(
                 amount = amount,
                 type = SavingsType.fromStorage(doc.getString("type")),
                 note = doc.getString("note").orEmpty(),
-                date = doc.getString("date").orEmpty()
+                date = doc.getString("date").orEmpty(),
+                bankAccountId = doc.getString("bankAccountId").orEmpty(),
+                bankAccountName = doc.getString("bankAccountName").orEmpty()
             )
             customerTotals[customerId]?.savingsEntries?.add(entry)
             deletedCustomerTotals[customerId]?.savingsEntries?.add(entry)

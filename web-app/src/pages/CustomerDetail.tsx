@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Check, PiggyBank, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Check, PiggyBank, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatMoney, formatDate, todayString, evaluateExpression } from '../utils/format';
 import { CustomerTransaction, isVisibleInTransactions, isEmi, isSplit, AccountKind, SplitEntry, ACCOUNT_KIND_LABELS, getAccountOptions, ALL_ACCOUNTS } from '../types/models';
@@ -9,12 +9,14 @@ type TxnFilter = 'ALL' | 'bank_account' | 'credit_card' | 'person';
 
 function TransactionRow({
   txn,
+  runningBalance,
   onSettle,
   onPartialPay,
   onDelete,
   onEdit,
 }: {
   txn: CustomerTransaction;
+  runningBalance: number;
   onSettle: (id: string, settled: boolean) => void;
   onPartialPay: (id: string) => void;
   onDelete: (id: string) => void;
@@ -33,7 +35,11 @@ function TransactionRow({
           {txn.isSettled && ' • ✓ Settled'}
           {!txn.isSettled && txn.partialPaidAmount > 0 && ` • Partial ${formatMoney(txn.partialPaidAmount)}`}
           {isEmi(txn) && ` • EMI ${txn.emiIndex + 1}/${txn.emiTotal}`}
-          {isSplit(txn) && ' • Split'}
+        </div>
+        <div className="txn-balance" style={{
+          color: runningBalance > 0 ? 'var(--warning)' : 'var(--primary)',
+        }}>
+          Bal. {formatMoney(runningBalance)}
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -82,6 +88,154 @@ function TransactionRow({
   );
 }
 
+// ── Split Group Row ────────────────────────────────────────────────────────────
+// Groups all split entries under one collapsible header with per-entry actions.
+function SplitGroupRow({
+  splits,
+  expanded,
+  onToggle,
+  runningBalance,
+  onSettle,
+  onPartialPay,
+  onDelete,
+  onEdit,
+}: {
+  splits: CustomerTransaction[];
+  expanded: boolean;
+  onToggle: () => void;
+  runningBalance: number;
+  onSettle: (id: string, settled: boolean) => void;
+  onPartialPay: (id: string) => void;
+  onDelete: (id: string) => void;
+  onEdit: (txn: CustomerTransaction) => void;
+}) {
+  const totalAmount = splits.reduce((s, t) => s + t.amount, 0);
+  const totalDue = splits.reduce((s, t) => s + (t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount)), 0);
+  const allSettled = splits.every(t => t.isSettled);
+  const anyPartial = splits.some(t => !t.isSettled && t.partialPaidAmount > 0);
+  const groupStatusColor = allSettled ? 'var(--green)' : anyPartial ? 'var(--orange)' : 'var(--red)';
+  const name = splits[0]?.name ?? 'Split Transaction';
+  const date = splits[0]?.transactionDate ?? '';
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--outline)' }}>
+      {/* Group header — click to expand/collapse */}
+      <div
+        className="txn-row"
+        style={{ borderBottom: 'none', cursor: 'pointer', paddingBottom: expanded ? '0.5rem' : '0.875rem' }}
+        onClick={onToggle}
+      >
+        <div className="txn-dot" style={{ background: groupStatusColor }} />
+        <div className="txn-info">
+          <div className="txn-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {name}
+            <span style={{
+              fontSize: '0.6875rem', fontWeight: 600, padding: '1px 7px',
+              borderRadius: 999, background: 'rgba(26,143,212,0.12)', color: 'var(--primary)',
+            }}>
+              Split · {splits.length}
+            </span>
+          </div>
+          <div className="txn-meta">
+            {formatDate(date)}
+            {allSettled && ' • ✓ All Settled'}
+            {!allSettled && totalDue > 0 && ` • Due ${formatMoney(totalDue)}`}
+          </div>
+          <div className="txn-balance" style={{
+            color: runningBalance > 0 ? 'var(--warning)' : 'var(--primary)',
+          }}>
+            Bal. {formatMoney(runningBalance)}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <div className="txn-amount" style={{ color: groupStatusColor }}>{formatMoney(totalAmount)}</div>
+          <div style={{ color: 'var(--text-muted)' }}>
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded split entries */}
+      {expanded && (
+        <div style={{
+          marginLeft: 22,
+          marginBottom: '0.75rem',
+          borderLeft: '2px solid var(--outline)',
+          paddingLeft: '0.75rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0,
+        }}>
+          {splits.map(split => {
+            const splitStatusColor = split.isSettled ? 'var(--green)' : split.partialPaidAmount > 0 ? 'var(--orange)' : 'var(--red)';
+            const remaining = Math.max(0, split.amount - split.partialPaidAmount);
+            const accentColor = split.accountKind === 'credit_card' ? 'var(--warning)' : split.accountKind === 'person' ? 'var(--primary)' : 'var(--secondary)';
+            const kindLabel = split.accountKind === 'credit_card' ? 'Credit Card' : split.accountKind === 'person' ? 'Person' : 'Bank Account';
+            return (
+              <div key={split.id} style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: '0.625rem 0',
+                borderBottom: '1px solid var(--outline)',
+              }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: splitStatusColor, flexShrink: 0, marginTop: 6 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text)' }}>
+                    {split.accountName}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: accentColor, marginTop: 1 }}>{kindLabel}</div>
+                  {split.isSettled && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--green)', marginTop: 1 }}>✓ Settled</div>
+                  )}
+                  {!split.isSettled && split.partialPaidAmount > 0 && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                      Partial {formatMoney(split.partialPaidAmount)} • Due {formatMoney(remaining)}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: splitStatusColor }}>
+                    {formatMoney(split.amount)}
+                  </div>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: split.isSettled ? 'var(--green)' : 'var(--text-muted)' }}
+                      onClick={e => { e.stopPropagation(); onSettle(split.id, !split.isSettled); }}
+                      title={split.isSettled ? 'Mark unsettled' : 'Mark settled'}
+                    >
+                      <Check size={12} />
+                    </button>
+                    {!split.isSettled && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                        onClick={e => { e.stopPropagation(); onPartialPay(split.id); }}
+                        title="Add partial payment"
+                      >
+                        ₹
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: 'var(--red)' }}
+                      onClick={e => { e.stopPropagation(); onDelete(split.id); }}
+                      title="Delete split entry"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface AddTxnForm {
   transactionName: string;
   accountKind: AccountKind;
@@ -118,9 +272,10 @@ export default function CustomerDetail() {
   const navigate = useNavigate();
   const {
     customers, settings,
-    addTransaction, addEmiTransactions, addSplitTransactions,
+    addTransaction, addEmiTransactions, addSplitTransactions, convertEmiInstallmentToSplit,
     updateTransaction, deleteTransaction, addPartialPayment,
     toggleTransactionSettled, deleteCustomer, updateCustomerDueAmount,
+    dataLoading,
   } = useApp();
 
   const customer = customers.find(c => c.id === customerId);
@@ -134,6 +289,33 @@ export default function CustomerDetail() {
   const [dueAmount, setDueAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(false);
+  // Track which split groups are expanded — keyed by groupId so state
+  // survives re-renders triggered by settle/partial-pay Firestore updates.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  // Settle confirmation — holds the pending action until user confirms
+  const [settleConfirm, setSettleConfirm] = useState<{
+    id: string;
+    name: string;
+    markingAs: boolean; // true = marking paid, false = marking unpaid
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+
+  // EMI-to-split conversion state (used when editing an EMI installment)
+  const [emiSplitMode, setEmiSplitMode] = useState(false);
+  const [emiSplits, setEmiSplits] = useState<SplitEntry[]>([
+    { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' },
+    { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' },
+  ]);
 
   const visibleTxns = useMemo(() => {
     if (!customer) return [];
@@ -141,8 +323,63 @@ export default function CustomerDetail() {
     return customer.transactions
       .filter(t => isVisibleInTransactions(t, today))
       .filter(t => filter === 'ALL' || t.accountKind === filter)
-      .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
+      .sort((a, b) =>
+        b.transactionDate.localeCompare(a.transactionDate) || b.amount - a.amount
+      );
   }, [customer, filter]);
+
+  // Group split transactions together; keep singles as-is.
+  // Also compute a running balance per item (descending date order = newest first).
+  // Running balance starts at the total due across all visible+filtered transactions,
+  // then decrements by each item's due amount — matching the mobile app behaviour.
+  type TxnListItem =
+    | { kind: 'single'; txn: CustomerTransaction; runningBalance: number }
+    | { kind: 'split'; groupId: string; splits: CustomerTransaction[]; runningBalance: number };
+
+  const txnListItems = useMemo((): TxnListItem[] => {
+    // Step 1: compute total due across all visible filtered transactions
+    const totalDue = visibleTxns.reduce((sum, t) => {
+      return sum + (t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount));
+    }, 0);
+
+    // Step 2: build groups (split or single) in sorted order
+    type RawGroup =
+      | { kind: 'single'; txn: CustomerTransaction }
+      | { kind: 'split'; groupId: string; splits: CustomerTransaction[] };
+
+    const splitMap = new Map<string, CustomerTransaction[]>();
+    const rawGroups: RawGroup[] = [];
+
+    visibleTxns.forEach(t => {
+      if (t.splitGroupId) {
+        const group = splitMap.get(t.splitGroupId);
+        if (group) {
+          group.push(t);
+        } else {
+          const newGroup = [t];
+          splitMap.set(t.splitGroupId, newGroup);
+          rawGroups.push({ kind: 'split', groupId: t.splitGroupId, splits: newGroup });
+        }
+      } else {
+        rawGroups.push({ kind: 'single', txn: t });
+      }
+    });
+
+    // Step 3: assign running balance — starts at totalDue, decrements by each group's due
+    let runningBal = totalDue;
+    return rawGroups.map(group => {
+      const groupDue = group.kind === 'single'
+        ? (group.txn.isSettled ? 0 : Math.max(0, group.txn.amount - group.txn.partialPaidAmount))
+        : group.splits.reduce((s, t) => s + (t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount)), 0);
+
+      const balanceAtThisRow = runningBal;
+      runningBal -= groupDue;
+
+      return group.kind === 'single'
+        ? { kind: 'single' as const, txn: group.txn, runningBalance: balanceAtThisRow }
+        : { kind: 'split' as const, groupId: group.groupId, splits: group.splits, runningBalance: balanceAtThisRow };
+    });
+  }, [visibleTxns]);
 
   const accountOptions = useMemo(() =>
     getAccountOptions(form.accountKind, settings.selectedAccountIds),
@@ -222,8 +459,37 @@ export default function CustomerDetail() {
     if (!editTxn || !form.transactionName.trim()) return;
     setSaving(true);
     try {
-      const amount = evaluateExpression(form.amount) ?? parseFloat(form.amount);
-      if (!isNaN(amount)) {
+      // EMI installment being converted to split across multiple accounts
+      if (editTxn.emiGroupId && emiSplitMode) {
+        const validSplits = emiSplits.filter(s => {
+          const amt = parseFloat(s.amount);
+          return !isNaN(amt) && amt > 0 && (s.accountKind === 'person' ? s.personName.trim() : s.accountId);
+        });
+        if (validSplits.length >= 1) {
+          await convertEmiInstallmentToSplit({
+            originalTransactionId: editTxn.id,
+            customerId: customer.id,
+            customerName: customer.name,
+            transactionName: form.transactionName,
+            transactionDate: form.transactionDate,
+            emiGroupId: editTxn.emiGroupId,
+            emiIndex: editTxn.emiIndex,
+            emiTotal: editTxn.emiTotal,
+            splits: validSplits,
+          });
+        }
+      } else {
+        // Normal update
+        const amount = evaluateExpression(form.amount) ?? parseFloat(form.amount);
+        if (isNaN(amount) || amount <= 0) {
+          setSaving(false);
+          return; // invalid amount — do nothing
+        }
+        // Validate account is selected for non-person accounts (same guard as handleSaveTxn)
+        if (form.accountKind !== 'person' && !form.accountId) {
+          setSaving(false);
+          return; // account not selected — do nothing
+        }
         await updateTransaction({
           transactionId: editTxn.id,
           transactionName: form.transactionName,
@@ -238,6 +504,7 @@ export default function CustomerDetail() {
         });
       }
       setEditTxn(null);
+      setEmiSplitMode(false);
       setForm(defaultForm());
     } finally {
       setSaving(false);
@@ -246,6 +513,11 @@ export default function CustomerDetail() {
 
   const openEdit = (txn: CustomerTransaction) => {
     setEditTxn(txn);
+    setEmiSplitMode(false);
+    setEmiSplits([
+      { accountKind: txn.accountKind, accountId: txn.accountId, accountName: txn.accountName, personName: txn.personName, amount: String(txn.amount) },
+      { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' },
+    ]);
     setForm({
       ...defaultForm(),
       transactionName: txn.name,
@@ -258,6 +530,30 @@ export default function CustomerDetail() {
       mode: 'simple',
     });
   };
+
+  // Account breakdown — group visible transactions by account (include person)
+  const accountBreakdowns = useMemo(() => {
+    const today = new Date();
+    const map = new Map<string, {
+      accountName: string;
+      accountKind: AccountKind;
+      totalUsed: number;
+      totalDue: number;
+    }>();
+    customer.transactions
+      .filter(t => isVisibleInTransactions(t, today))
+      .forEach(t => {
+        const key = `${t.accountKind}::${t.accountId}`;
+        const due = t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount);
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, { accountName: t.accountName, accountKind: t.accountKind, totalUsed: t.amount, totalDue: due });
+        } else {
+          map.set(key, { ...existing, totalUsed: existing.totalUsed + t.amount, totalDue: existing.totalDue + due });
+        }
+      });
+    return Array.from(map.values()).sort((a, b) => b.totalDue - a.totalDue || b.totalUsed - a.totalUsed);
+  }, [customer.transactions]);
 
   return (
     <div className="page-content">
@@ -324,6 +620,54 @@ export default function CustomerDetail() {
         </div>
       </div>
 
+      {/* Account Breakdown */}
+      <div className="flow-card" style={{ marginBottom: '1rem', padding: '0.875rem' }}>
+        <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.625rem' }}>
+          Account Breakdown
+        </p>
+        {dataLoading ? (
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Loading...</p>
+        ) : accountBreakdowns.length === 0 ? (
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>No transactions yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {accountBreakdowns.map((b, i) => {
+              const accent = b.accountKind === 'credit_card' ? 'var(--warning)' : b.accountKind === 'person' ? 'var(--primary)' : 'var(--secondary)';
+              const kindLabel = b.accountKind === 'credit_card' ? 'Credit Card' : b.accountKind === 'person' ? 'Person' : 'Bank Account';
+              return (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: `color-mix(in srgb, ${accent} 8%, transparent)`,
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  border: `1px solid color-mix(in srgb, ${accent} 20%, transparent)`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {b.accountName}
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: accent }}>{kindLabel}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: accent }}>
+                      {formatMoney(b.totalUsed)}
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: b.totalDue > 0 ? 'var(--warning)' : 'var(--primary)' }}>
+                      {b.totalDue > 0 ? `Due ${formatMoney(b.totalDue)}` : '✓ Settled'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Transactions */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
         <h3>Transactions</h3>
@@ -353,16 +697,49 @@ export default function CustomerDetail() {
         </div>
       ) : (
         <div className="flow-card">
-          {visibleTxns.map(txn => (
-            <TransactionRow
-              key={txn.id}
-              txn={txn}
-              onSettle={async (id, settled) => { await toggleTransactionSettled(id, settled); }}
-              onPartialPay={(id) => { setPartialPayId(id); setPartialAmount(''); }}
-              onDelete={async (id) => { await deleteTransaction(id); }}
-              onEdit={openEdit}
-            />
-          ))}
+          {txnListItems.map(item => {
+            if (item.kind === 'split') {
+              return (
+                <SplitGroupRow
+                  key={item.groupId}
+                  splits={item.splits}
+                  expanded={expandedGroups.has(item.groupId)}
+                  onToggle={() => toggleGroup(item.groupId)}
+                  runningBalance={item.runningBalance}
+                  onSettle={(id, settled) => {
+                    const split = item.splits.find(s => s.id === id);
+                    setSettleConfirm({
+                      id,
+                      name: split?.accountName ?? 'this entry',
+                      markingAs: settled,
+                      onConfirm: async () => { await toggleTransactionSettled(id, settled); },
+                    });
+                  }}
+                  onPartialPay={(id) => { setPartialPayId(id); setPartialAmount(''); }}
+                  onDelete={async (id) => { await deleteTransaction(id); }}
+                  onEdit={openEdit}
+                />
+              );
+            }
+            return (
+              <TransactionRow
+                key={item.txn.id}
+                txn={item.txn}
+                runningBalance={item.runningBalance}
+                onSettle={(id, settled) => {
+                  setSettleConfirm({
+                    id,
+                    name: item.txn.name,
+                    markingAs: settled,
+                    onConfirm: async () => { await toggleTransactionSettled(id, settled); },
+                  });
+                }}
+                onPartialPay={(id) => { setPartialPayId(id); setPartialAmount(''); }}
+                onDelete={async (id) => { await deleteTransaction(id); }}
+                onEdit={openEdit}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -387,78 +764,61 @@ export default function CustomerDetail() {
                 </div>
               )}
 
+              {/* EMI installment — show split toggle */}
+              {editTxn?.emiGroupId && (
+                <div style={{
+                  background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+                  borderRadius: 12, padding: '0.75rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                        EMI {editTxn.emiIndex + 1}/{editTxn.emiTotal}
+                      </div>
+                      <div className="text-muted text-xs" style={{ marginTop: 2 }}>
+                        Split this installment across multiple accounts or persons
+                      </div>
+                    </div>
+                    <label className="switch" style={{ flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={emiSplitMode}
+                        onChange={e => setEmiSplitMode(e.target.checked)}
+                      />
+                      <span className="switch-track" />
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
                 <label className="form-label">Transaction Name</label>
                 <input className="form-input" value={form.transactionName} onChange={e => setForm(f => ({ ...f, transactionName: e.target.value }))} placeholder="e.g. Grocery, Rent" />
               </div>
 
-              {form.mode !== 'split' && (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">Account Type</label>
-                    <select className="form-select" value={form.accountKind} onChange={e => setForm(f => ({ ...f, accountKind: e.target.value as AccountKind, accountId: '', accountName: '' }))}>
-                      <option value="credit_card">Credit Card</option>
-                      <option value="bank_account">Bank Account</option>
-                      <option value="person">Person</option>
-                    </select>
-                  </div>
-
-                  {form.accountKind === 'person' ? (
-                    <div className="form-group">
-                      <label className="form-label">Person Name</label>
-                      <input className="form-input" value={form.personName} onChange={e => setForm(f => ({ ...f, personName: e.target.value }))} placeholder="Enter person name" />
-                    </div>
-                  ) : (
-                    <div className="form-group">
-                      <label className="form-label">{form.accountKind === 'credit_card' ? 'Credit Card' : 'Bank Account'}</label>
-                      <select
-                        className="form-select"
-                        value={form.accountId}
-                        onChange={e => {
-                          const opt = accountOptions.find(a => a.id === e.target.value);
-                          setForm(f => ({ ...f, accountId: e.target.value, accountName: opt?.name ?? '' }));
-                        }}
-                      >
-                        <option value="">Select account</option>
-                        {accountOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="form-group">
-                    <label className="form-label">Amount (supports expressions like 100+50)</label>
-                    <input className="form-input" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-                  </div>
-
-                  {form.mode === 'emi' && (
-                    <>
-                      <div className="form-group">
-                        <label className="form-label">Number of EMI Months</label>
-                        <input className="form-input" type="number" min="1" value={form.emiMonths} onChange={e => setForm(f => ({ ...f, emiMonths: e.target.value }))} placeholder="e.g. 12" />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">First Month Override (optional)</label>
-                        <input className="form-input" value={form.emiFirstMonth} onChange={e => setForm(f => ({ ...f, emiFirstMonth: e.target.value }))} placeholder="Leave blank for equal EMIs" />
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {form.mode === 'split' && (
+              {/* EMI split form */}
+              {editTxn?.emiGroupId && emiSplitMode ? (
                 <div>
-                  <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Split Entries</label>
-                  {form.splits.map((split, i) => (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <label className="form-label" style={{ margin: 0 }}>Split Entries</label>
+                    <span className="text-muted text-xs">
+                      Total: {formatMoney(emiSplits.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0))}
+                      {' / '}
+                      {formatMoney(editTxn.amount)}
+                    </span>
+                  </div>
+                  {emiSplits.map((split, i) => (
                     <div key={i} style={{ background: 'var(--bg-soft)', borderRadius: 14, padding: '0.75rem', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                         <select
                           className="form-select"
                           style={{ flex: 1 }}
                           value={split.accountKind}
                           onChange={e => {
-                            const splits = [...form.splits];
-                            splits[i] = { ...splits[i], accountKind: e.target.value as AccountKind, accountId: '', accountName: '' };
-                            setForm(f => ({ ...f, splits }));
+                            const s = [...emiSplits];
+                            s[i] = { ...s[i], accountKind: e.target.value as AccountKind, accountId: '', accountName: '' };
+                            setEmiSplits(s);
                           }}
                         >
                           <option value="credit_card">Credit Card</option>
@@ -467,24 +827,31 @@ export default function CustomerDetail() {
                         </select>
                         <input
                           className="form-input"
-                          style={{ width: 100 }}
+                          style={{ width: 110 }}
                           value={split.amount}
                           onChange={e => {
-                            const splits = [...form.splits];
-                            splits[i] = { ...splits[i], amount: e.target.value };
-                            setForm(f => ({ ...f, splits }));
+                            const s = [...emiSplits];
+                            s[i] = { ...s[i], amount: e.target.value };
+                            setEmiSplits(s);
                           }}
                           placeholder="Amount"
                         />
+                        {emiSplits.length > 1 && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--red)', padding: '4px 8px' }}
+                            onClick={() => setEmiSplits(s => s.filter((_, j) => j !== i))}
+                          >✕</button>
+                        )}
                       </div>
                       {split.accountKind === 'person' ? (
                         <input
                           className="form-input"
                           value={split.personName}
                           onChange={e => {
-                            const splits = [...form.splits];
-                            splits[i] = { ...splits[i], personName: e.target.value };
-                            setForm(f => ({ ...f, splits }));
+                            const s = [...emiSplits];
+                            s[i] = { ...s[i], personName: e.target.value };
+                            setEmiSplits(s);
                           }}
                           placeholder="Person name"
                         />
@@ -494,9 +861,9 @@ export default function CustomerDetail() {
                           value={split.accountId}
                           onChange={e => {
                             const opt = getAccountOptions(split.accountKind, settings.selectedAccountIds).find(a => a.id === e.target.value);
-                            const splits = [...form.splits];
-                            splits[i] = { ...splits[i], accountId: e.target.value, accountName: opt?.name ?? '' };
-                            setForm(f => ({ ...f, splits }));
+                            const s = [...emiSplits];
+                            s[i] = { ...s[i], accountId: e.target.value, accountName: opt?.name ?? '' };
+                            setEmiSplits(s);
                           }}
                         >
                           <option value="">Select account</option>
@@ -509,11 +876,140 @@ export default function CustomerDetail() {
                   ))}
                   <button
                     className="btn btn-outline btn-sm"
-                    onClick={() => setForm(f => ({ ...f, splits: [...f.splits, { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' }] }))}
+                    onClick={() => setEmiSplits(s => [...s, { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' }])}
                   >
                     + Add Split
                   </button>
                 </div>
+              ) : (
+                /* Normal simple edit fields */
+                !editTxn?.emiGroupId || !emiSplitMode ? (
+                  <>
+                    {form.mode !== 'split' && (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">Account Type</label>
+                          <select className="form-select" value={form.accountKind} onChange={e => setForm(f => ({ ...f, accountKind: e.target.value as AccountKind, accountId: '', accountName: '' }))}>
+                            <option value="credit_card">Credit Card</option>
+                            <option value="bank_account">Bank Account</option>
+                            <option value="person">Person</option>
+                          </select>
+                        </div>
+
+                        {form.accountKind === 'person' ? (
+                          <div className="form-group">
+                            <label className="form-label">Person Name</label>
+                            <input className="form-input" value={form.personName} onChange={e => setForm(f => ({ ...f, personName: e.target.value }))} placeholder="Enter person name" />
+                          </div>
+                        ) : (
+                          <div className="form-group">
+                            <label className="form-label">{form.accountKind === 'credit_card' ? 'Credit Card' : 'Bank Account'}</label>
+                            <select
+                              className="form-select"
+                              value={form.accountId}
+                              onChange={e => {
+                                const opt = accountOptions.find(a => a.id === e.target.value);
+                                setForm(f => ({ ...f, accountId: e.target.value, accountName: opt?.name ?? '' }));
+                              }}
+                            >
+                              <option value="">Select account</option>
+                              {accountOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            </select>
+                          </div>
+                        )}
+
+                        <div className="form-group">
+                          <label className="form-label">Amount (supports expressions like 100+50)</label>
+                          <input className="form-input" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                        </div>
+
+                        {form.mode === 'emi' && (
+                          <>
+                            <div className="form-group">
+                              <label className="form-label">Number of EMI Months</label>
+                              <input className="form-input" type="number" min="1" value={form.emiMonths} onChange={e => setForm(f => ({ ...f, emiMonths: e.target.value }))} placeholder="e.g. 12" />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">First Month Override (optional)</label>
+                              <input className="form-input" value={form.emiFirstMonth} onChange={e => setForm(f => ({ ...f, emiFirstMonth: e.target.value }))} placeholder="Leave blank for equal EMIs" />
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {form.mode === 'split' && (
+                      <div>
+                        <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Split Entries</label>
+                        {form.splits.map((split, i) => (
+                          <div key={i} style={{ background: 'var(--bg-soft)', borderRadius: 14, padding: '0.75rem', marginBottom: 8 }}>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                              <select
+                                className="form-select"
+                                style={{ flex: 1 }}
+                                value={split.accountKind}
+                                onChange={e => {
+                                  const splits = [...form.splits];
+                                  splits[i] = { ...splits[i], accountKind: e.target.value as AccountKind, accountId: '', accountName: '' };
+                                  setForm(f => ({ ...f, splits }));
+                                }}
+                              >
+                                <option value="credit_card">Credit Card</option>
+                                <option value="bank_account">Bank Account</option>
+                                <option value="person">Person</option>
+                              </select>
+                              <input
+                                className="form-input"
+                                style={{ width: 100 }}
+                                value={split.amount}
+                                onChange={e => {
+                                  const splits = [...form.splits];
+                                  splits[i] = { ...splits[i], amount: e.target.value };
+                                  setForm(f => ({ ...f, splits }));
+                                }}
+                                placeholder="Amount"
+                              />
+                            </div>
+                            {split.accountKind === 'person' ? (
+                              <input
+                                className="form-input"
+                                value={split.personName}
+                                onChange={e => {
+                                  const splits = [...form.splits];
+                                  splits[i] = { ...splits[i], personName: e.target.value };
+                                  setForm(f => ({ ...f, splits }));
+                                }}
+                                placeholder="Person name"
+                              />
+                            ) : (
+                              <select
+                                className="form-select"
+                                value={split.accountId}
+                                onChange={e => {
+                                  const opt = getAccountOptions(split.accountKind, settings.selectedAccountIds).find(a => a.id === e.target.value);
+                                  const splits = [...form.splits];
+                                  splits[i] = { ...splits[i], accountId: e.target.value, accountName: opt?.name ?? '' };
+                                  setForm(f => ({ ...f, splits }));
+                                }}
+                              >
+                                <option value="">Select account</option>
+                                {getAccountOptions(split.accountKind, settings.selectedAccountIds).map(a => (
+                                  <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => setForm(f => ({ ...f, splits: [...f.splits, { accountKind: 'credit_card', accountId: '', accountName: '', personName: '', amount: '' }] }))}
+                        >
+                          + Add Split
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : null
               )}
 
               <div className="form-group">
@@ -523,13 +1019,50 @@ export default function CustomerDetail() {
             </div>
 
             <div className="modal-actions">
-              <button className="btn btn-outline" onClick={() => { setShowAddTxn(false); setEditTxn(null); }}>Cancel</button>
+              <button className="btn btn-outline" onClick={() => { setShowAddTxn(false); setEditTxn(null); setEmiSplitMode(false); }}>Cancel</button>
               <button
                 className="btn btn-primary"
                 onClick={editTxn ? handleUpdateTxn : handleSaveTxn}
-                disabled={saving || !form.transactionName.trim()}
+                disabled={
+                  saving ||
+                  !form.transactionName.trim() ||
+                  // For edit: block if account not selected (non-person, non-split-mode)
+                  (!!editTxn && !emiSplitMode && form.accountKind !== 'person' && !form.accountId)
+                }
               >
-                {saving ? 'Saving...' : editTxn ? 'Update' : 'Add Transaction'}
+                {saving ? 'Saving...' : editTxn ? (editTxn.emiGroupId && emiSplitMode ? 'Split Installment' : 'Update') : 'Add Transaction'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settle confirmation modal */}
+      {settleConfirm && (
+        <div className="modal-overlay" onClick={() => setSettleConfirm(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">
+              {settleConfirm.markingAs ? 'Mark as Paid?' : 'Mark as Unpaid?'}
+            </h3>
+            <p className="modal-subtitle">
+              {settleConfirm.markingAs
+                ? <>Are you sure you want to mark <strong>{settleConfirm.name}</strong> as fully paid and settled?</>
+                : <>Are you sure you want to mark <strong>{settleConfirm.name}</strong> as unpaid? This will restore it to outstanding.</>
+              }
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setSettleConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                className={`btn ${settleConfirm.markingAs ? 'btn-primary' : 'btn-danger'}`}
+                onClick={async () => {
+                  const action = settleConfirm;
+                  setSettleConfirm(null);
+                  await action.onConfirm();
+                }}
+              >
+                {settleConfirm.markingAs ? 'Yes, Mark Paid' : 'Yes, Mark Unpaid'}
               </button>
             </div>
           </div>
@@ -614,9 +1147,14 @@ export default function CustomerDetail() {
               <button className="btn btn-outline" onClick={() => setConfirmDeleteCustomer(false)}>Cancel</button>
               <button
                 className="btn btn-danger"
-                onClick={async () => {
-                  await deleteCustomer(customer.id, customer.name);
+                onClick={() => {
+                  // Navigate first — before the Firestore listener fires and removes
+                  // the customer from state, which would cause this component to
+                  // re-render with customer=undefined and show a blank screen.
+                  const id = customer.id;
+                  const name = customer.name;
                   navigate('/customers');
+                  deleteCustomer(id, name);
                 }}
               >
                 Delete

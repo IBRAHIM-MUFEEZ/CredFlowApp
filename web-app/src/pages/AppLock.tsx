@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import RadafiqLogo from '../components/RadafiqLogo';
+import { isPlatformAuthenticatorAvailable } from '../utils/passkey';
 
 // Completely standalone lock screen — no shared layout, no CSS classes that
 // could introduce pseudo-elements or z-index stacking issues.
 
 export default function AppLock() {
-  const { security, verifyPasscode, resetPasscodeWithRecovery } = useApp();
+  const { security, verifyPasscode, resetPasscodeWithRecovery, hasPasskey, authenticateWithPasskey } = useApp();
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
@@ -14,6 +15,38 @@ export default function AppLock() {
   const [recoveryAnswer, setRecoveryAnswer] = useState('');
   const [newPasscode, setNewPasscode] = useState('');
   const [confirmNew, setConfirmNew] = useState('');
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [passkeyChecking, setPasskeyChecking] = useState(false);
+
+  // Check if platform authenticator is available on mount
+  useEffect(() => {
+    if (hasPasskey) {
+      isPlatformAuthenticatorAvailable().then(setPasskeyAvailable);
+    }
+  }, [hasPasskey]);
+
+  // Auto-prompt passkey if available and no error yet
+  useEffect(() => {
+    if (passkeyAvailable && hasPasskey && !error) {
+      handlePasskeyAuth();
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passkeyAvailable]);
+
+  const handlePasskeyAuth = async () => {
+    if (passkeyChecking) return;
+    setPasskeyChecking(true);
+    setError('');
+    try {
+      const ok = await authenticateWithPasskey();
+      if (!ok) setError('Biometric authentication failed. Use your passcode instead.');
+    } catch {
+      setError('Biometric authentication was cancelled or failed.');
+    } finally {
+      setPasskeyChecking(false);
+    }
+  };
 
   const verify = async (code: string) => {
     setChecking(true);
@@ -27,9 +60,8 @@ export default function AppLock() {
   };
 
   const pressDigit = (digit: string) => {
-    if (checking) return;
-    const next = passcode.length < 6 ? passcode + digit : passcode;
-    if (next === passcode) return;
+    if (checking || passcode.length >= 6) return;
+    const next = passcode + digit;
     setPasscode(next);
     setError('');
     if (next.length === 6) verify(next);
@@ -40,6 +72,35 @@ export default function AppLock() {
     setPasscode(p => p.slice(0, -1));
     setError('');
   };
+
+  useEffect(() => {
+    if (showRecovery) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const isDigit = event.key.length === 1 && event.key >= '0' && event.key <= '9';
+      if (isDigit) {
+        event.preventDefault();
+        pressDigit(event.key);
+        return;
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        pressBackspace();
+        return;
+      }
+
+      if (event.key === 'Enter' && passcode.length === 6 && !checking) {
+        event.preventDefault();
+        verify(passcode);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [checking, passcode, showRecovery]);
 
   const handleRecovery = async () => {
     if (!recoveryAnswer.trim() || newPasscode.length !== 6 || newPasscode !== confirmNew) return;
@@ -207,14 +268,10 @@ export default function AppLock() {
                 type="button"
                 aria-label={isBack ? 'Backspace' : `Digit ${key}`}
                 style={numpadBtn(disabled, isBack)}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  if (disabled) return;
+                disabled={disabled}
+                onClick={() => {
                   if (isBack) pressBackspace();
                   else pressDigit(key);
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
                 }}
               >
                 {key}
@@ -231,6 +288,40 @@ export default function AppLock() {
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A8FD4', fontSize: '0.875rem', fontWeight: 500, padding: '0.5rem' }}
           >
             Forgot passcode?
+          </button>
+        )}
+
+        {/* Biometric / Passkey unlock */}
+        {hasPasskey && passkeyAvailable && (
+          <button
+            type="button"
+            onClick={handlePasskeyAuth}
+            disabled={passkeyChecking}
+            style={{
+              marginTop: 8,
+              background: 'rgba(26,143,212,0.12)',
+              border: '1.5px solid rgba(26,143,212,0.35)',
+              borderRadius: 14,
+              color: passkeyChecking ? '#6BAED4' : '#1A8FD4',
+              cursor: passkeyChecking ? 'default' : 'pointer',
+              fontSize: '0.9375rem',
+              fontWeight: 600,
+              padding: '0.75rem 1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              width: '100%',
+              maxWidth: 300,
+              margin: '8px auto 0',
+              transition: 'opacity 0.15s',
+              opacity: passkeyChecking ? 0.6 : 1,
+            }}
+          >
+            <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>
+              {passkeyChecking ? '⏳' : '🔑'}
+            </span>
+            {passkeyChecking ? 'Verifying...' : 'Use Fingerprint / Face ID'}
           </button>
         )}
       </div>

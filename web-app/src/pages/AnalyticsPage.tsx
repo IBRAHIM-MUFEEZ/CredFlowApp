@@ -22,8 +22,9 @@ function cardMetricValue(card: CardSummary, metric: Metric): number {
 function customerMetricValue(customer: CustomerSummary, metric: Metric): number {
   switch (metric) {
     case 'USAGE': return customer.totalAmount;
-    // BUG-58 fix: total paid = manual paid + settled + partial
-    case 'PAID': return customer.creditDueAmount + customer.settledTransactionAmount + customer.partialPaidAmount;
+    // creditDueAmount is already the total paid (manual + settled + partial)
+    // as computed in firebaseRepository.ts buildAppData
+    case 'PAID': return customer.creditDueAmount;
     case 'OUTSTANDING': return customer.balance;
   }
 }

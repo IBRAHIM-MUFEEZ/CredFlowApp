@@ -128,3 +128,39 @@ function emptySecurityStorage(): SecurityStorage {
     lockoutUntil: 0,
   };
 }
+
+// ── Passkey credential storage ────────────────────────────────────────────────
+// Stores the WebAuthn credential ID per user UID in localStorage.
+// The credential ID is not secret — it's a handle the browser uses to look up
+// the private key stored in the platform authenticator (TPM / Secure Enclave).
+
+const PASSKEY_KEY = 'radafiq_passkey';
+
+interface PasskeyStorage {
+  credentialId: string; // base64url
+  ownerUid: string;
+}
+
+export function loadPasskeyStorage(): PasskeyStorage {
+  try {
+    const raw = localStorage.getItem(PASSKEY_KEY);
+    if (!raw) return { credentialId: '', ownerUid: '' };
+    return { credentialId: '', ownerUid: '', ...JSON.parse(raw) };
+  } catch {
+    return { credentialId: '', ownerUid: '' };
+  }
+}
+
+export function savePasskeyStorage(credentialId: string, ownerUid: string): void {
+  localStorage.setItem(PASSKEY_KEY, JSON.stringify({ credentialId, ownerUid }));
+}
+
+export function clearPasskeyStorage(): void {
+  localStorage.removeItem(PASSKEY_KEY);
+}
+
+/** Returns the stored credential ID for the given user, or '' if none. */
+export function getPasskeyCredentialId(uid: string): string {
+  const stored = loadPasskeyStorage();
+  return stored.ownerUid === uid ? stored.credentialId : '';
+}

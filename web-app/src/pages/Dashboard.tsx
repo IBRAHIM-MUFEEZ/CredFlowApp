@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Settings } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatMoney, getGreeting, getInitials } from '../utils/format';
-import { CardSummary, CustomerSummary, isVisibleInTransactions } from '../types/models';
+import { CardSummary, CustomerSummary, isVisibleInTransactions, isScheduledForFutureMonth } from '../types/models';
 
 function HeroPanel({ title, amount, subtitle }: { title: string; amount: string; subtitle: string }) {
   return (
@@ -15,31 +15,71 @@ function HeroPanel({ title, amount, subtitle }: { title: string; amount: string;
   );
 }
 
-function ActivityCard({ card }: { card: CardSummary }) {
-  const isOutgoing = card.accountKind === 'credit_card';
-  const accentColor = isOutgoing ? 'var(--warning)' : 'var(--secondary)';
+function ActivityCard({ card, currentDue, emiOutstanding }: {
+  card: CardSummary;
+  currentDue: number;
+  emiOutstanding: number;
+}) {
+  const isCredit = card.accountKind === 'credit_card';
+  const accentColor = isCredit ? 'var(--warning)' : 'var(--secondary)';
+
   return (
     <div className="flow-card" style={{ '--card-accent': accentColor, marginBottom: '0.75rem' } as React.CSSProperties}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{
           width: 42, height: 42, borderRadius: '50%',
-          background: `${accentColor}22`,
+          background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
+          flexShrink: 0, marginTop: 2,
         }}>
-          {isOutgoing ? <TrendingUp size={18} color={accentColor} /> : <TrendingDown size={18} color={accentColor} />}
+          {isCredit ? <TrendingUp size={18} color={accentColor} /> : <TrendingDown size={18} color={accentColor} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="truncate font-semibold">{card.name}</div>
           <div className="text-muted text-sm">
-            {card.accountKind === 'credit_card' ? 'Credit Card' : 'Bank Account'}
-            {card.dueDate && ` / Due ${card.dueDate}`}
+            {isCredit ? 'Credit Card' : 'Bank Account'}
+            {card.dueDate && ` • Due ${card.dueDate}`}
           </div>
-        </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontWeight: 700, color: accentColor }}>
-            {isOutgoing ? '-' : '+'}{formatMoney(card.payable)}
-          </div>
+
+          {/* Credit card: Current Due (non-EMI only) + EMI Outstanding (all EMIs) */}
+          {isCredit ? (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {/* Current Due — non-EMI unpaid transactions */}
+              <div style={{
+                flex: 1, minWidth: 100,
+                background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
+                borderRadius: 8, padding: '6px 10px',
+              }}>
+                <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Current Due
+                </div>
+                <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--warning)', marginTop: 2 }}>
+                  {formatMoney(currentDue)}
+                </div>
+              </div>
+              {/* EMI Outstanding — all unpaid EMI installments */}
+              {emiOutstanding > 0 && (
+                <div style={{
+                  flex: 1, minWidth: 100,
+                  background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+                  borderRadius: 8, padding: '6px 10px',
+                }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    EMI Outstanding
+                  </div>
+                  <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
+                    {formatMoney(emiOutstanding)}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, fontWeight: 700, fontSize: '1rem', color: accentColor }}>
+              +{formatMoney(card.payable)}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -91,6 +131,35 @@ export default function Dashboard() {
   const totalUsed = visibleCards.reduce((s, c) => s + c.bill, 0);
   const totalPaid = visibleCards.reduce((s, c) => s + c.pending, 0);
   const totalBalance = visibleCards.reduce((s, c) => s + c.payable, 0);
+
+  // Compute per-account breakdowns from customer transactions:
+  //   emiOutstandingByAccount  — ALL unpaid EMI installments (past + current + future)
+  //   nonEmiDueByAccount       — unpaid non-EMI transactions only (shown as "Current Due")
+  const { emiOutstandingByAccount, nonEmiDueByAccount } = useMemo(() => {
+    const emiMap = new Map<string, number>();
+    const nonEmiMap = new Map<string, number>();
+
+    customers.forEach(customer => {
+      customer.transactions.forEach(t => {
+        if (t.accountKind === 'person') return; // person transactions not on cards
+        const due = t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount);
+        if (due <= 0) return;
+
+        if (t.emiGroupId) {
+          // EMI — goes entirely into EMI Outstanding regardless of month
+          emiMap.set(t.accountId, (emiMap.get(t.accountId) ?? 0) + due);
+        } else {
+          // Non-EMI visible transaction — goes into Current Due
+          const today = new Date();
+          if (!isScheduledForFutureMonth(t, today)) {
+            nonEmiMap.set(t.accountId, (nonEmiMap.get(t.accountId) ?? 0) + due);
+          }
+        }
+      });
+    });
+
+    return { emiOutstandingByAccount: emiMap, nonEmiDueByAccount: nonEmiMap };
+  }, [customers]);
 
   const personSummaries = useMemo((): PersonSummary[] => {
     const map = new Map<string, PersonSummary>();
@@ -176,7 +245,12 @@ export default function Dashboard() {
           <>
             {/* BUG-35 fix: sort first, then slice */}
             {[...visibleCards].sort((a, b) => b.payable - a.payable).slice(0, 6).map(card => (
-              <ActivityCard key={card.id} card={card} />
+              <ActivityCard
+                key={card.id}
+                card={card}
+                currentDue={nonEmiDueByAccount.get(card.id) ?? 0}
+                emiOutstanding={emiOutstandingByAccount.get(card.id) ?? 0}
+              />
             ))}
             {personSummaries.slice(0, 6).map(person => (
               <PersonCard key={person.personId} person={person} />

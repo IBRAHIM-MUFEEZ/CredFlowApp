@@ -270,6 +270,38 @@ fun HomeScreen(
     val totalPaid = cards.sumOf { it.pending }
     val totalBalance = cards.sumOf { it.payable }
 
+    // Compute per-account breakdowns from customer transactions:
+    //   emiOutstandingByAccount — ALL unpaid EMI installments (past + current + future)
+    //   nonEmiDueByAccount      — unpaid non-EMI transactions only (shown as "Current Due")
+    val emiOutstandingByAccount = remember(customers) {
+        val map = mutableMapOf<String, Double>()
+        customers.forEach { customer ->
+            customer.transactions.forEach { t ->
+                if (t.accountKind == AccountKind.PERSON) return@forEach
+                if (!t.isEmi) return@forEach
+                val due = if (t.isSettled) 0.0 else (t.amount - t.partialPaidAmount).coerceAtLeast(0.0)
+                if (due <= 0.0) return@forEach
+                map[t.accountId] = (map[t.accountId] ?: 0.0) + due
+            }
+        }
+        map
+    }
+
+    val nonEmiDueByAccount = remember(customers) {
+        val map = mutableMapOf<String, Double>()
+        customers.forEach { customer ->
+            customer.transactions.forEach { t ->
+                if (t.accountKind == AccountKind.PERSON) return@forEach
+                if (t.isEmi) return@forEach // EMIs go to emiOutstandingByAccount
+                if (t.isScheduledForFutureMonth()) return@forEach
+                val due = if (t.isSettled) 0.0 else (t.amount - t.partialPaidAmount).coerceAtLeast(0.0)
+                if (due <= 0.0) return@forEach
+                map[t.accountId] = (map[t.accountId] ?: 0.0) + due
+            }
+        }
+        map
+    }
+
     // Aggregate person transactions across all customers
     val personSummaries = remember(customers) {
         val map = linkedMapOf<String, Triple<String, Double, Double>>() // id -> (name, used, due)
@@ -449,7 +481,11 @@ fun HomeScreen(
             }
         } else {
             items(activityCards.sortedByDescending { it.payable }.take(6), key = { it.id }) { card ->
-                HomeActivityCard(card = card)
+                HomeActivityCard(
+                    card = card,
+                    currentDue = nonEmiDueByAccount[card.id] ?: 0.0,
+                    emiOutstanding = emiOutstandingByAccount[card.id] ?: 0.0
+                )
             }
             items(activityPersons.take(6), key = { "person_${it.personId}" }) { person ->
                 HomePersonCard(person = person)
@@ -557,18 +593,13 @@ private fun HomeGreetingHeader(
 }
 
 @Composable
-private fun HomeActivityCard(card: CardSummary) {
+private fun HomeActivityCard(card: CardSummary, currentDue: Double = 0.0, emiOutstanding: Double = 0.0) {
     val isOutgoing = card.accountKind == AccountKind.CREDIT_CARD
     val accentColor = if (isOutgoing) warningColor() else MaterialTheme.colorScheme.secondary
-    val amountText = if (isOutgoing) {
-        "-${formatMoney(card.payable)}"
-    } else {
-        "+${formatMoney(card.payable)}"
-    }
     val supportingText = buildString {
         append(card.accountKind.label)
         if (card.dueDate.isNotBlank()) {
-            append(" / Due ")
+            append(" • Due ")
             append(card.dueDate)
         }
     }
@@ -576,12 +607,12 @@ private fun HomeActivityCard(card: CardSummary) {
     FlowCard(accentColor = accountAccent(card.accountKind)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Box(
                     modifier = Modifier
@@ -613,15 +644,73 @@ private fun HomeActivityCard(card: CardSummary) {
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    // Credit card: show current due (non-EMI) + EMI outstanding (all EMIs)
+                    if (isOutgoing) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Current Due pill — non-EMI unpaid transactions only
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(warningColor().copy(alpha = 0.08f))
+                                    .border(1.dp, warningColor().copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "CURRENT DUE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = formatMoney(currentDue),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = warningColor(),
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            // EMI Outstanding pill — all unpaid EMI installments
+                            if (emiOutstanding > 0.0) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "EMI OUTSTANDING",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = formatMoney(emiOutstanding),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            Text(
-                text = amountText,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = accentColor
-            )
+            // Bank account: show single amount on the right
+            if (!isOutgoing) {
+                Text(
+                    text = "+${formatMoney(card.payable)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+            }
         }
     }
 }

@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ALL_ACCOUNTS, BANK_ACCOUNTS, CREDIT_CARDS } from '../types/models';
 import { currentTimestampLabel } from '../utils/format';
+import { isPlatformAuthenticatorAvailable } from '../utils/passkey';
 
 const RECOVERY_QUESTIONS = [
   'What is your email ID?',
@@ -15,6 +16,7 @@ export default function SettingsPage() {
     profile, saveProfile, signOut,
     settings, setThemeMode, setAccountSelected,
     security, setPasscode, updatePasscode, clearPasscode, setLockEnabled,
+    hasPasskey, registerPasskey, removePasskey,
     exportBackupToFile, importBackupFromFile, backupStatusMessage, backupInProgress,
   } = useApp();
 
@@ -37,6 +39,15 @@ export default function SettingsPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showAccountsConfig, setShowAccountsConfig] = useState(false);
   const [showRemovePasscodeConfirm, setShowRemovePasscodeConfirm] = useState(false);
+
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [passkeyRegistering, setPasskeyRegistering] = useState(false);
+  const [passkeyError, setPasskeyError] = useState('');
+
+  // Check platform authenticator support on mount
+  useEffect(() => {
+    isPlatformAuthenticatorAvailable().then(setPasskeySupported);
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,6 +101,22 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (file) importBackupFromFile(file);
     e.target.value = '';
+  };
+
+  const handleRegisterPasskey = async () => {
+    setPasskeyRegistering(true);
+    setPasskeyError('');
+    try {
+      await registerPasskey();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Registration failed.';
+      // User cancelled — don't show an error
+      if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('abort')) {
+        setPasskeyError(msg);
+      }
+    } finally {
+      setPasskeyRegistering(false);
+    }
   };
 
   return (
@@ -195,6 +222,74 @@ export default function SettingsPage() {
             Recovery question: {security.recoveryQuestion}
           </p>
         )}
+
+        {/* Passkey / Biometric unlock */}
+        <div style={{
+          marginTop: '1rem',
+          padding: '0.875rem',
+          background: 'var(--bg-soft)',
+          borderRadius: 16,
+          border: '1px solid var(--outline)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ fontSize: '1.25rem' }}>🔑</span>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.9375rem' }}>Passkey (Biometric Unlock)</div>
+              <div className="text-muted text-xs" style={{ marginTop: 2 }}>
+                {hasPasskey
+                  ? 'A passkey is registered on this device. You can unlock with fingerprint or Windows Hello.'
+                  : passkeySupported
+                    ? 'Register your fingerprint or Windows Hello to unlock without typing your passcode.'
+                    : 'Use your device biometrics (Windows Hello, Touch ID) to unlock the app.'}
+              </div>
+            </div>
+          </div>
+
+          {passkeyError && (
+            <p className="text-error text-xs" style={{ marginBottom: 8 }}>{passkeyError}</p>
+          )}
+
+          {!passkeySupported && (
+            <p className="text-muted text-xs" style={{ marginBottom: 8, padding: '6px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--outline)' }}>
+              ⚠️ Your browser reported no platform authenticator. Make sure you're on HTTPS and Windows Hello / biometrics is set up, then try registering anyway.
+            </p>
+          )}
+
+          {hasPasskey ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-outline btn-sm"
+                style={{ flex: 1 }}
+                onClick={handleRegisterPasskey}
+                disabled={passkeyRegistering}
+              >
+                {passkeyRegistering ? 'Registering...' : 'Re-register Passkey'}
+              </button>
+              <button
+                className="btn btn-outline btn-sm"
+                style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
+                onClick={() => { removePasskey(); setPasskeyError(''); }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-primary btn-full"
+              onClick={handleRegisterPasskey}
+              disabled={passkeyRegistering || !security.hasPasscode}
+              title={!security.hasPasscode ? 'Set a passcode first to enable passkey unlock' : ''}
+            >
+              {passkeyRegistering ? 'Waiting for biometric...' : 'Register Passkey'}
+            </button>
+          )}
+
+          {!security.hasPasscode && !hasPasskey && (
+            <p className="text-muted text-xs" style={{ marginTop: 6 }}>
+              Set a passcode first to enable passkey registration.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Backup & Restore */}

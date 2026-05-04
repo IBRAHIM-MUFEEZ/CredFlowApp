@@ -524,6 +524,8 @@ private fun customerMetricValue(
 ): Double {
     return when (metric) {
         AnalyticsMetric.USAGE -> customer.totalAmount
+        // creditDueAmount is already the total paid (manual + settled + partial)
+        // as computed in FirebaseRepository.toSummary()
         AnalyticsMetric.PAID -> customer.creditDueAmount
         AnalyticsMetric.OUTSTANDING -> customer.balance
     }
