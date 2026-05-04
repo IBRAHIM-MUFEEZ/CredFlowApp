@@ -649,6 +649,8 @@ fun CustomerCard(
                                     onSettledChangeAll = { settled ->
                                         group.splits.forEach { vm.toggleTransactionSettled(it.id, settled) }
                                     },
+                                    onSettledChange = { txnId, settled -> vm.toggleTransactionSettled(txnId, settled) },
+                                    onPartialPayment = { txnId, amount -> vm.addPartialPayment(txnId, amount) },
                                     onEditSplit = { transactionToEdit = it }
                                 )
                             } else {
@@ -1221,6 +1223,8 @@ fun CustomerDetailScreen(
                                     onSettledChangeAll = { settled ->
                                         group.splits.forEach { vm.toggleTransactionSettled(it.id, settled) }
                                     },
+                                    onSettledChange = { txnId, settled -> vm.toggleTransactionSettled(txnId, settled) },
+                                    onPartialPayment = { txnId, amount -> vm.addPartialPayment(txnId, amount) },
                                     onEditSplit = { transactionToEdit = it }
                                 )
                             } else {
@@ -2691,6 +2695,8 @@ private fun SplitTransactionRow(
     runningBalance: Double = -1.0,
     onDeleteAll: () -> Unit,
     onSettledChangeAll: (Boolean) -> Unit,
+    onSettledChange: (transactionId: String, settled: Boolean) -> Unit = { _, _ -> },
+    onPartialPayment: (transactionId: String, amount: String) -> Unit = { _, _ -> },
     onEditSplit: ((CustomerTransaction) -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -2813,38 +2819,149 @@ private fun SplitTransactionRow(
         if (expanded) {
             Spacer(modifier = Modifier.height(8.dp))
             group.splits.forEach { split ->
-                Row(
+                val splitDue = if (split.isSettled) 0.0
+                               else (split.amount - split.partialPaidAmount).coerceAtLeast(0.0)
+                val accent = accountAccent(split.accountKind)
+                val displayName = if (split.accountKind == AccountKind.PERSON && split.personName.isNotBlank())
+                    split.personName else split.accountName
+                var showPartialDialog by remember(split.id) { mutableStateOf(false) }
+                var showSplitSettleConfirm by remember(split.id) { mutableStateOf<Boolean?>(null) }
+
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(accountAccent(split.accountKind))
-                        )
-                        Text(
-                            text = if (split.accountKind == AccountKind.PERSON && split.personName.isNotBlank())
-                                split.personName else split.accountName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(accent)
+                            )
+                            Column {
+                                Text(
+                                    text = displayName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = split.accountKind.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accent
+                                )
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = formatMoney(split.amount),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                            Text(
+                                text = if (split.isSettled) "✓ Settled"
+                                       else if (split.partialPaidAmount > 0.0) "Partial • Due ${formatMoney(splitDue)}"
+                                       else "Due ${formatMoney(splitDue)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (split.isSettled) MaterialTheme.colorScheme.primary else warningColor()
+                            )
+                        }
                     }
-                    Text(
-                        text = formatMoney(split.amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accountAccent(split.accountKind)
+                    // Per-entry action buttons
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Mark Paid / Mark Unpaid
+                        OutlinedButton(
+                            onClick = { showSplitSettleConfirm = !split.isSettled },
+                            modifier = Modifier.height(28.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = if (split.isSettled) MaterialTheme.colorScheme.primary else warningColor()
+                            ),
+                            border = BorderStroke(1.dp, if (split.isSettled) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else warningColor().copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = if (split.isSettled) "✓ Paid" else "Mark Paid",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        // Partial payment (only if not settled)
+                        if (!split.isSettled) {
+                            OutlinedButton(
+                                onClick = { showPartialDialog = true },
+                                modifier = Modifier.height(28.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.secondary
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                            ) {
+                                Text("+ Partial", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+
+                // Per-split settle confirmation
+                showSplitSettleConfirm?.let { markingAsPaid ->
+                    AlertDialog(
+                        onDismissRequest = { showSplitSettleConfirm = null },
+                        title = { Text(if (markingAsPaid) "Mark as Paid?" else "Mark as Unpaid?") },
+                        text = {
+                            Text(
+                                if (markingAsPaid)
+                                    "Mark \"$displayName\" (${formatMoney(split.amount)}) as fully paid?"
+                                else
+                                    "Mark \"$displayName\" as unpaid? This will restore it to outstanding."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showSplitSettleConfirm = null
+                                onSettledChange(split.id, markingAsPaid)
+                            }) {
+                                Text(
+                                    if (markingAsPaid) "Yes, Mark Paid" else "Yes, Mark Unpaid",
+                                    color = if (markingAsPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showSplitSettleConfirm = null }) { Text("Cancel") }
+                        }
+                    )
+                }
+
+                // Per-split partial payment dialog
+                if (showPartialDialog) {
+                    PartialPaymentDialog(
+                        transaction = split,
+                        onDismiss = { showPartialDialog = false },
+                        onSave = { amount ->
+                            onPartialPayment(split.id, amount)
+                            showPartialDialog = false
+                        }
                     )
                 }
             }
@@ -2855,7 +2972,9 @@ private fun SplitTransactionRow(
         SplitDetailDialog(
             group = group,
             onDismiss = { showDetailDialog = false },
-            onEditSplit = onEditSplit
+            onEditSplit = onEditSplit,
+            onSettledChange = onSettledChange,
+            onPartialPayment = onPartialPayment
         )
     }
 
@@ -2915,7 +3034,9 @@ private fun SplitTransactionRow(
 private fun SplitDetailDialog(
     group: TransactionGroup,
     onDismiss: () -> Unit,
-    onEditSplit: ((CustomerTransaction) -> Unit)? = null
+    onEditSplit: ((CustomerTransaction) -> Unit)? = null,
+    onSettledChange: (transactionId: String, settled: Boolean) -> Unit = { _, _ -> },
+    onPartialPayment: (transactionId: String, amount: String) -> Unit = { _, _ -> }
 ) {
     val total = group.splits.sumOf { it.amount }
     val totalPaid = group.splits.sumOf { split ->
@@ -3061,6 +3182,8 @@ private fun SplitDetailDialog(
                         split.personName else split.accountName
                     val splitDue = if (split.isSettled) 0.0
                                    else (split.amount - split.partialPaidAmount).coerceAtLeast(0.0)
+                    var showSplitSettleConfirm by remember(split.id) { mutableStateOf<Boolean?>(null) }
+                    var showPartialDialog by remember(split.id) { mutableStateOf(false) }
 
                     Column(
                         modifier = Modifier
@@ -3154,6 +3277,81 @@ private fun SplitDetailDialog(
                                 )
                             }
                         }
+                        // Per-entry action buttons
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showSplitSettleConfirm = !split.isSettled },
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (split.isSettled) MaterialTheme.colorScheme.primary else warningColor()
+                                ),
+                                border = BorderStroke(1.dp, if (split.isSettled) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else warningColor().copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = if (split.isSettled) "✓ Paid" else "Mark Paid",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            if (!split.isSettled) {
+                                OutlinedButton(
+                                    onClick = { showPartialDialog = true },
+                                    modifier = Modifier.height(30.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.secondary
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                                ) {
+                                    Text("+ Partial", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+
+                    // Per-split settle confirmation
+                    showSplitSettleConfirm?.let { markingAsPaid ->
+                        AlertDialog(
+                            onDismissRequest = { showSplitSettleConfirm = null },
+                            title = { Text(if (markingAsPaid) "Mark as Paid?" else "Mark as Unpaid?") },
+                            text = {
+                                Text(
+                                    if (markingAsPaid)
+                                        "Mark \"$displayName\" (${formatMoney(split.amount)}) as fully paid?"
+                                    else
+                                        "Mark \"$displayName\" as unpaid? This will restore it to outstanding."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showSplitSettleConfirm = null
+                                    onSettledChange(split.id, markingAsPaid)
+                                }) {
+                                    Text(
+                                        if (markingAsPaid) "Yes, Mark Paid" else "Yes, Mark Unpaid",
+                                        color = if (markingAsPaid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showSplitSettleConfirm = null }) { Text("Cancel") }
+                            }
+                        )
+                    }
+
+                    if (showPartialDialog) {
+                        PartialPaymentDialog(
+                            transaction = split,
+                            onDismiss = { showPartialDialog = false },
+                            onSave = { amount ->
+                                onPartialPayment(split.id, amount)
+                                showPartialDialog = false
+                            }
+                        )
                     }
                 }
             }

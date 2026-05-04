@@ -149,8 +149,29 @@ function SplitGroupRow({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
           <div className="txn-amount" style={{ color: groupStatusColor }}>{formatMoney(totalAmount)}</div>
-          <div style={{ color: 'var(--text-muted)' }}>
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            {/* Mark All Paid shortcut on group header */}
+            {!allSettled && (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{
+                  padding: '2px 8px', fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--outline)',
+                  borderRadius: 6,
+                }}
+                onClick={e => {
+                  e.stopPropagation();
+                  splits.filter(s => !s.isSettled).forEach(s => onSettle(s.id, true));
+                }}
+                title="Mark all entries as paid"
+              >
+                Mark All Paid
+              </button>
+            )}
+            <div style={{ color: 'var(--text-muted)' }}>
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
           </div>
         </div>
       </div>
@@ -198,14 +219,20 @@ function SplitGroupRow({
                   <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: splitStatusColor }}>
                     {formatMoney(split.amount)}
                   </div>
-                  <div style={{ display: 'flex', gap: 2 }}>
+                  <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {/* Mark as Paid / Unpaid button — explicit label */}
                     <button
                       className="btn btn-ghost btn-sm"
-                      style={{ padding: '2px 6px', fontSize: '0.75rem', color: split.isSettled ? 'var(--green)' : 'var(--text-muted)' }}
+                      style={{
+                        padding: '2px 8px', fontSize: '0.7rem',
+                        color: split.isSettled ? 'var(--green)' : 'var(--text-muted)',
+                        border: `1px solid ${split.isSettled ? 'var(--green)' : 'var(--outline)'}`,
+                        borderRadius: 6,
+                      }}
                       onClick={e => { e.stopPropagation(); onSettle(split.id, !split.isSettled); }}
-                      title={split.isSettled ? 'Mark unsettled' : 'Mark settled'}
+                      title={split.isSettled ? 'Mark as unpaid' : 'Mark as paid'}
                     >
-                      <Check size={12} />
+                      {split.isSettled ? '✓ Paid' : 'Mark Paid'}
                     </button>
                     {!split.isSettled && (
                       <button

@@ -704,5 +704,10 @@ class StatementGenerator(private val context: Context) {
         canvas.drawText("Page $pageNumber  •  Radafiq", 430f, (pageHeight - 16).toFloat(), rightPaint)
     }
 
-    private fun formatMoney(amount: Double): String = "₹${String.format("%.2f", amount)}"
+    private fun formatMoney(amount: Double): String {
+        val formatter = java.text.NumberFormat.getNumberInstance(java.util.Locale("en", "IN"))
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return "₹${formatter.format(amount)}"
+    }
 }

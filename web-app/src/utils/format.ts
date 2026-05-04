@@ -1,11 +1,13 @@
 export function formatMoney(amount: number): string {
   if (isNaN(amount)) return '₹0.00';
+  // en-IN locale produces Indian number grouping: 1,00,000.00
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+    currencyDisplay: 'symbol',
+  }).format(amount).replace(/^₹\s*/, '₹'); // ensure no space after ₹
 }
 
 export function formatDate(dateStr: string): string {

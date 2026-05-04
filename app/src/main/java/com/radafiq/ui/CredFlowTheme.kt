@@ -620,7 +620,10 @@ fun EmptyState(
 }
 
 fun formatMoney(value: Double): String {
-    return "₹${String.format("%.2f", value)}"
+    val formatter = java.text.NumberFormat.getNumberInstance(java.util.Locale("en", "IN"))
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    return "₹${formatter.format(value)}"
 }
 
 fun formatDisplayDate(isoDate: String): String {
