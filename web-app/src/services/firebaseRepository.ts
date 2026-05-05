@@ -196,7 +196,19 @@ function buildAppData(
       if (isNaN(d.getTime())) return true;
       const refYear = today.getFullYear();
       const refMonth = today.getMonth();
-      return !(d.getFullYear() > refYear || (d.getFullYear() === refYear && d.getMonth() > refMonth));
+      // Future month by transaction date
+      if (d.getFullYear() > refYear || (d.getFullYear() === refYear && d.getMonth() > refMonth)) {
+        // But show if due date is within 20 days
+        if (t.dueDate) {
+          const due = new Date(t.dueDate);
+          if (!isNaN(due.getTime())) {
+            const msIn20Days = 20 * 24 * 60 * 60 * 1000;
+            if (due.getTime() - today.getTime() <= msIn20Days) return true;
+          }
+        }
+        return false;
+      }
+      return true;
     });
 
     let totalAmount = 0;
@@ -259,13 +271,22 @@ function buildAppData(
     if (t.accountKind === 'person') return;
 
     if (t.emiGroupId) {
-      // EMI — only count visible (current month and past)
+      // EMI — only count visible (current month and past, or due within 20 days)
       const d = new Date(t.transactionDate);
       if (!isNaN(d.getTime())) {
         const refYear = today.getFullYear();
         const refMonth = today.getMonth();
         if (d.getFullYear() > refYear || (d.getFullYear() === refYear && d.getMonth() > refMonth)) {
-          return; // skip future EMI
+          // Future month — skip unless due within 20 days
+          let showEarly = false;
+          if (t.dueDate) {
+            const due = new Date(t.dueDate);
+            if (!isNaN(due.getTime())) {
+              const msIn20Days = 20 * 24 * 60 * 60 * 1000;
+              if (due.getTime() - today.getTime() <= msIn20Days) showEarly = true;
+            }
+          }
+          if (!showEarly) return;
         }
       }
     }

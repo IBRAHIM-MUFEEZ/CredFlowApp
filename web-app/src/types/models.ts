@@ -132,8 +132,49 @@ export function isScheduledForFutureMonth(t: CustomerTransaction, referenceDate:
   return instYear > refYear || (instYear === refYear && instMonth > refMonth);
 }
 
+/**
+ * Returns true if this EMI installment should appear in the transaction list.
+ *
+ * Rules:
+ * - Non-EMI transactions are always visible.
+ * - EMI installments are visible when ANY of these is true:
+ *   1. The transaction date is in the current month or past (original behaviour).
+ *   2. The due date is within the next 20 days (show upcoming dues early).
+ */
 export function isVisibleInTransactions(t: CustomerTransaction, referenceDate: Date = new Date()): boolean {
-  return !isScheduledForFutureMonth(t, referenceDate);
+  if (!isEmi(t)) return true;
+
+  // Rule 1: transaction date is current month or past
+  if (!isScheduledForFutureMonth(t, referenceDate)) return true;
+
+  // Rule 2: due date is within 20 days from today
+  if (t.dueDate) {
+    const due = new Date(t.dueDate);
+    if (!isNaN(due.getTime())) {
+      const msIn20Days = 20 * 24 * 60 * 60 * 1000;
+      if (due.getTime() - referenceDate.getTime() <= msIn20Days) return true;
+    }
+  }
+
+  return false;
+}
+
+/** Returns true if the EMI installment's due date has passed and it is not settled. */
+export function isEmiOverdue(t: CustomerTransaction, referenceDate: Date = new Date()): boolean {
+  if (!isEmi(t) || t.isSettled) return false;
+  if (!t.dueDate) return false;
+  const due = new Date(t.dueDate);
+  if (isNaN(due.getTime())) return false;
+  return due < referenceDate;
+}
+
+/** Returns the number of days until (positive) or since (negative) the due date. */
+export function daysUntilDue(t: CustomerTransaction, referenceDate: Date = new Date()): number | null {
+  if (!t.dueDate) return null;
+  const due = new Date(t.dueDate);
+  if (isNaN(due.getTime())) return null;
+  const diffMs = due.getTime() - referenceDate.getTime();
+  return Math.ceil(diffMs / (24 * 60 * 60 * 1000));
 }
 
 export interface SavingsEntry {

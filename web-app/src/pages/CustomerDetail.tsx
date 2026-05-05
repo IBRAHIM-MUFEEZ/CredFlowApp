@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Check, PiggyBank, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Check, PiggyBank, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatMoney, formatDate, todayString, evaluateExpression } from '../utils/format';
-import { CustomerTransaction, isVisibleInTransactions, isEmi, isSplit, AccountKind, SplitEntry, ACCOUNT_KIND_LABELS, getAccountOptions, ALL_ACCOUNTS } from '../types/models';
+import { CustomerTransaction, isVisibleInTransactions, isEmi, isSplit, isEmiOverdue, daysUntilDue, AccountKind, SplitEntry, ACCOUNT_KIND_LABELS, getAccountOptions, ALL_ACCOUNTS } from '../types/models';
+import { generateAndDownloadStatement } from '../utils/statementGenerator';
 
 type TxnFilter = 'ALL' | 'bank_account' | 'credit_card' | 'person';
 
@@ -22,20 +23,57 @@ function TransactionRow({
   onDelete: (id: string) => void;
   onEdit: (txn: CustomerTransaction) => void;
 }) {
-  const statusColor = txn.isSettled ? 'var(--green)' : txn.partialPaidAmount > 0 ? 'var(--orange)' : 'var(--red)';
+  const today = new Date();
+  const overdue = isEmiOverdue(txn, today);
+  const days = isEmi(txn) ? daysUntilDue(txn, today) : null;
+
+  const statusColor = txn.isSettled
+    ? 'var(--green)'
+    : overdue
+    ? 'var(--red)'
+    : txn.partialPaidAmount > 0
+    ? 'var(--orange)'
+    : 'var(--red)';
   const remaining = Math.max(0, txn.amount - txn.partialPaidAmount);
 
+  // Due date label for EMI rows
+  const dueDateLabel = (() => {
+    if (!isEmi(txn) || txn.isSettled || !txn.dueDate) return null;
+    if (overdue) {
+      const daysLate = days !== null ? Math.abs(days) : null;
+      return { text: daysLate ? `Overdue by ${daysLate}d` : 'Overdue', color: 'var(--red)' };
+    }
+    if (days !== null && days <= 20) {
+      return { text: `Due in ${days}d (${formatDate(txn.dueDate)})`, color: days <= 5 ? 'var(--warning)' : 'var(--text-muted)' };
+    }
+    return { text: `Due ${formatDate(txn.dueDate)}`, color: 'var(--text-muted)' };
+  })();
+
   return (
-    <div className="txn-row">
+    <div className="txn-row" style={{ borderLeft: overdue && !txn.isSettled ? '3px solid var(--red)' : undefined }}>
       <div className="txn-dot" style={{ background: statusColor }} />
       <div className="txn-info">
-        <div className="txn-name">{txn.name}</div>
+        <div className="txn-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {txn.name}
+          {overdue && !txn.isSettled && (
+            <span style={{
+              fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px',
+              borderRadius: 4, background: 'var(--red)', color: '#fff',
+              letterSpacing: '0.03em', flexShrink: 0,
+            }}>OVERDUE</span>
+          )}
+        </div>
         <div className="txn-meta">
           {txn.accountName} • {formatDate(txn.transactionDate)}
           {txn.isSettled && ' • ✓ Settled'}
           {!txn.isSettled && txn.partialPaidAmount > 0 && ` • Partial ${formatMoney(txn.partialPaidAmount)}`}
           {isEmi(txn) && ` • EMI ${txn.emiIndex + 1}/${txn.emiTotal}`}
         </div>
+        {dueDateLabel && (
+          <div style={{ fontSize: '0.7rem', color: dueDateLabel.color, marginTop: 2, fontWeight: overdue ? 700 : 500 }}>
+            {dueDateLabel.text}
+          </div>
+        )}
         <div className="txn-balance" style={{
           color: runningBalance > 0 ? 'var(--warning)' : 'var(--primary)',
         }}>
@@ -298,7 +336,7 @@ export default function CustomerDetail() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate = useNavigate();
   const {
-    customers, settings,
+    customers, settings, profile,
     addTransaction, addEmiTransactions, addSplitTransactions, convertEmiInstallmentToSplit,
     updateTransaction, deleteTransaction, addPartialPayment,
     toggleTransactionSettled, deleteCustomer, updateCustomerDueAmount,
@@ -600,6 +638,17 @@ export default function CustomerDetail() {
             <p className="text-muted text-sm">{customer.transactions.length} transaction(s)</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                const userName = profile?.displayName?.trim() || profile?.email?.trim() || 'Radafiq User';
+                generateAndDownloadStatement(customer, userName, false);
+              }}
+              title="Download Statement PDF"
+              style={{ color: 'var(--primary)' }}
+            >
+              <Download size={16} />
+            </button>
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => navigate(`/customers/${customer.id}/savings`)}

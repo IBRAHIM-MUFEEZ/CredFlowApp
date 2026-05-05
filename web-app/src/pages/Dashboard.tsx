@@ -129,7 +129,8 @@ export default function Dashboard() {
   );
 
   const totalUsed = visibleCards.reduce((s, c) => s + c.bill, 0);
-  const totalPaid = visibleCards.reduce((s, c) => s + c.pending, 0);
+  // totalPaid = what customers have paid (used minus outstanding balance)
+  const totalPaid = visibleCards.reduce((s, c) => s + Math.max(0, c.bill - c.payable), 0);
   const totalBalance = visibleCards.reduce((s, c) => s + c.payable, 0);
 
   // Compute per-account breakdowns from customer transactions:

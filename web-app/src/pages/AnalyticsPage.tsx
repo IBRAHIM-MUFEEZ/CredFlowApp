@@ -47,7 +47,7 @@ export default function AnalyticsPage() {
   );
 
   const totalUsed = visibleCards.reduce((s, c) => s + c.bill, 0);
-  const totalPaid = visibleCards.reduce((s, c) => s + c.pending, 0);
+  const totalPaid = visibleCards.reduce((s, c) => s + Math.max(0, c.bill - c.payable), 0);
   const totalBalance = visibleCards.reduce((s, c) => s + c.payable, 0);
 
   const filteredCards = visibleCards.filter(c => c.accountKind === accountKindFilter);

@@ -5,7 +5,7 @@ import { CustomerTransaction } from '../types/models';
 
 interface EmiRow {
   groupId: string;
-  transactionId: string;
+  transactionIds: string[];
   customerName: string;
   planName: string;
   accountName: string;
@@ -13,9 +13,14 @@ interface EmiRow {
   emiTotal: number;
   amount: number;
   transactionDate: string;
+  dueDate: string;          // per-installment due date from Firestore
   isSettled: boolean;
-  isPast: boolean;
+  isPast: boolean;          // transaction date ≤ today
+  isOverdue: boolean;       // dueDate has passed and not settled
+  isDueSoon: boolean;       // due within 20 days and not settled
+  daysUntilDue: number | null;
   isCurrent: boolean;
+  isSplitInstallment: boolean;
 }
 
 export default function EmiSchedulePage() {
@@ -25,6 +30,7 @@ export default function EmiSchedulePage() {
 
   const allRows = useMemo((): EmiRow[] => {
     const result: EmiRow[] = [];
+
     customers.forEach(customer => {
       const emiGroups = new Map<string, CustomerTransaction[]>();
       customer.transactions
@@ -36,39 +42,87 @@ export default function EmiSchedulePage() {
         });
 
       emiGroups.forEach((instalments, groupKey) => {
-        instalments.sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+        const byIndex = new Map<number, CustomerTransaction[]>();
         instalments.forEach(t => {
-          const date = new Date(t.transactionDate);
-          const isPast = isNaN(date.getTime()) || date <= today;
-          const isCurrent = !isNaN(date.getTime()) && date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
-          const planName = t.name.split(' — EMI')[0].trim();
+          if (!byIndex.has(t.emiIndex)) byIndex.set(t.emiIndex, []);
+          byIndex.get(t.emiIndex)!.push(t);
+        });
+
+        byIndex.forEach((parts, emiIndex) => {
+          const first = parts[0];
+          const txnDate = new Date(first.transactionDate);
+          const isPast = isNaN(txnDate.getTime()) || txnDate <= today;
+          const isCurrent = !isNaN(txnDate.getTime())
+            && txnDate.getFullYear() === today.getFullYear()
+            && txnDate.getMonth() === today.getMonth();
+
+          // Due date logic
+          const dueDate = first.dueDate ?? '';
+          const dueDateObj = dueDate ? new Date(dueDate) : null;
+          const allSettled = parts.every(p => p.isSettled);
+
+          let isOverdue = false;
+          let isDueSoon = false;
+          let daysUntilDueVal: number | null = null;
+
+          if (dueDateObj && !isNaN(dueDateObj.getTime()) && !allSettled) {
+            const diffMs = dueDateObj.getTime() - today.getTime();
+            daysUntilDueVal = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+            isOverdue = daysUntilDueVal < 0;
+            isDueSoon = !isOverdue && daysUntilDueVal <= 20;
+          }
+
+          const planName = first.name.split(' — EMI')[0].trim();
+          const combinedAmount = parts.reduce((s, p) => s + p.amount, 0);
+          const isSplit = parts.length > 1;
+          const accountName = isSplit
+            ? parts.map(p => p.accountName).filter(Boolean).join(', ')
+            : first.accountName;
+
           result.push({
             groupId: groupKey,
-            transactionId: t.id,
+            transactionIds: parts.map(p => p.id),
             customerName: customer.name,
             planName,
-            accountName: t.accountName,
-            emiIndex: t.emiIndex,
-            emiTotal: t.emiTotal,
-            amount: t.amount,
-            transactionDate: t.transactionDate,
-            isSettled: t.isSettled,
+            accountName,
+            emiIndex,
+            emiTotal: first.emiTotal,
+            amount: combinedAmount,
+            transactionDate: first.transactionDate,
+            dueDate,
+            isSettled: allSettled,
             isPast,
+            isOverdue,
+            isDueSoon,
+            daysUntilDue: daysUntilDueVal,
             isCurrent,
+            isSplitInstallment: isSplit,
           });
         });
       });
     });
-    return result.sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+
+    // Sort: overdue first, then due-soon, then current, then upcoming, then settled
+    return result.sort((a, b) => {
+      const priority = (r: EmiRow) => {
+        if (r.isSettled) return 4;
+        if (r.isOverdue) return 0;
+        if (r.isDueSoon) return 1;
+        if (r.isCurrent) return 2;
+        return 3;
+      };
+      const pd = priority(a) - priority(b);
+      if (pd !== 0) return pd;
+      return a.transactionDate.localeCompare(b.transactionDate);
+    });
   }, [customers, today]);
 
   // Group by plan
   const grouped = useMemo(() => {
     const map = new Map<string, EmiRow[]>();
     allRows.forEach(row => {
-      const key = `${row.groupId}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(row);
+      if (!map.has(row.groupId)) map.set(row.groupId, []);
+      map.get(row.groupId)!.push(row);
     });
     return Array.from(map.entries()).map(([key, rows]) => ({ key, rows }));
   }, [allRows]);
@@ -77,7 +131,9 @@ export default function EmiSchedulePage() {
     <div className="page-content">
       <div style={{ marginBottom: '1.5rem' }}>
         <h2>EMI Schedule</h2>
-        <p className="text-muted text-sm" style={{ marginTop: 4 }}>All EMI installments across customers.</p>
+        <p className="text-muted text-sm" style={{ marginTop: 4 }}>
+          All EMI installments across customers.
+        </p>
       </div>
 
       {grouped.length === 0 ? (
@@ -91,10 +147,34 @@ export default function EmiSchedulePage() {
           const first = rows[0];
           const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
           const settledCount = rows.filter(r => r.isSettled).length;
+          const overdueCount = rows.filter(r => r.isOverdue).length;
+          const dueSoonCount = rows.filter(r => r.isDueSoon).length;
+
           return (
             <div key={key} className="flow-card" style={{ marginBottom: '1rem' }}>
+              {/* Plan header */}
               <div style={{ marginBottom: '0.75rem' }}>
-                <div className="font-semibold">{first.planName}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="font-semibold">{first.planName}</div>
+                  {overdueCount > 0 && (
+                    <span style={{
+                      fontSize: '0.625rem', fontWeight: 700, padding: '2px 7px',
+                      borderRadius: 4, background: 'var(--red)', color: '#fff',
+                      letterSpacing: '0.04em',
+                    }}>
+                      {overdueCount} OVERDUE
+                    </span>
+                  )}
+                  {dueSoonCount > 0 && overdueCount === 0 && (
+                    <span style={{
+                      fontSize: '0.625rem', fontWeight: 700, padding: '2px 7px',
+                      borderRadius: 4, background: 'var(--warning)', color: '#fff',
+                      letterSpacing: '0.04em',
+                    }}>
+                      DUE SOON
+                    </span>
+                  )}
+                </div>
                 <div className="text-muted text-sm">
                   {first.customerName} • {first.accountName} • {settledCount}/{rows.length} settled
                 </div>
@@ -103,24 +183,58 @@ export default function EmiSchedulePage() {
                 </div>
               </div>
 
+              {/* Progress bar */}
               <div className="progress-bar" style={{ marginBottom: '0.75rem' }}>
                 <div
                   className="progress-fill"
-                  style={{ width: `${(settledCount / rows.length) * 100}%`, background: 'var(--primary)' }}
+                  style={{
+                    width: `${(settledCount / rows.length) * 100}%`,
+                    background: overdueCount > 0 ? 'var(--red)' : 'var(--primary)',
+                  }}
                 />
               </div>
 
+              {/* Installment rows */}
               {rows.map(row => {
-                // BUG-54 fix: current-month items should show primary, not warning (overdue)
+                // Determine color and label
                 const statusColor = row.isSettled
                   ? 'var(--green)'
+                  : row.isOverdue
+                  ? 'var(--red)'
+                  : row.isDueSoon
+                  ? 'var(--warning)'
                   : row.isCurrent
                   ? 'var(--primary)'
-                  : row.isPast
-                  ? 'var(--warning)'
                   : 'var(--text-muted)';
+
+                const statusLabel = row.isSettled
+                  ? '✓ Settled'
+                  : row.isOverdue
+                  ? `Overdue${row.daysUntilDue !== null ? ` ${Math.abs(row.daysUntilDue)}d` : ''}`
+                  : row.isDueSoon
+                  ? `Due in ${row.daysUntilDue}d`
+                  : row.isCurrent
+                  ? 'Current'
+                  : 'Upcoming';
+
                 return (
-                  <div key={row.transactionId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.5rem 0', borderBottom: '1px solid var(--outline)' }}>
+                  <div
+                    key={`${row.groupId}_${row.emiIndex}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '0.5rem 0',
+                      borderBottom: '1px solid var(--outline)',
+                      borderLeft: row.isOverdue && !row.isSettled
+                        ? '3px solid var(--red)'
+                        : row.isDueSoon && !row.isSettled
+                        ? '3px solid var(--warning)'
+                        : '3px solid transparent',
+                      paddingLeft: row.isOverdue || row.isDueSoon ? '0.5rem' : 0,
+                    }}
+                  >
+                    {/* Index circle */}
                     <div style={{
                       width: 28, height: 28, borderRadius: '50%',
                       background: `${statusColor}22`,
@@ -130,20 +244,52 @@ export default function EmiSchedulePage() {
                     }}>
                       {row.emiIndex + 1}
                     </div>
+
+                    {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="text-sm font-semibold">EMI {row.emiIndex + 1}/{row.emiTotal}</div>
-                      <div className="text-muted text-xs">{formatDate(row.transactionDate)}</div>
+                      <div className="text-sm font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        EMI {row.emiIndex + 1}/{row.emiTotal}
+                        {row.isSplitInstallment && (
+                          <span style={{
+                            fontSize: '0.625rem', fontWeight: 600, padding: '1px 6px',
+                            borderRadius: 999, background: 'rgba(26,143,212,0.12)', color: 'var(--primary)',
+                          }}>Split</span>
+                        )}
+                      </div>
+                      {/* Transaction date */}
+                      <div className="text-muted text-xs">
+                        Installment: {formatDate(row.transactionDate)}
+                      </div>
+                      {/* Due date — always show if present */}
+                      {row.dueDate && (
+                        <div style={{
+                          fontSize: '0.7rem',
+                          color: statusColor,
+                          fontWeight: row.isOverdue || row.isDueSoon ? 700 : 400,
+                          marginTop: 1,
+                        }}>
+                          Due: {formatDate(row.dueDate)}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Amount + status */}
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: statusColor }}>{formatMoney(row.amount)}</div>
-                      <div className="text-xs" style={{ color: statusColor }}>
-                        {row.isSettled ? '✓ Settled' : row.isCurrent ? 'Current' : row.isPast ? 'Overdue' : 'Upcoming'}
-                      </div>
+                      <div className="text-xs" style={{ color: statusColor }}>{statusLabel}</div>
                     </div>
+
+                    {/* Settle toggle */}
                     <button
                       className="btn btn-ghost btn-sm"
-                      style={{ color: row.isSettled ? 'var(--green)' : 'var(--text-muted)', padding: '4px 8px' }}
-                      onClick={async () => await toggleTransactionSettled(row.transactionId, !row.isSettled)}
+                      style={{
+                        color: row.isSettled ? 'var(--green)' : 'var(--text-muted)',
+                        padding: '4px 8px',
+                      }}
+                      onClick={async () => {
+                        const newState = !row.isSettled;
+                        await Promise.all(row.transactionIds.map(id => toggleTransactionSettled(id, newState)));
+                      }}
                       title={row.isSettled ? 'Mark unsettled' : 'Mark settled'}
                     >
                       {row.isSettled ? '✓' : '○'}

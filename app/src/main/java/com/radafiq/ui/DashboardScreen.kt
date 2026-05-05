@@ -787,18 +787,19 @@ private fun HomePersonCard(person: PersonSummary) {
 
 private data class EmiGroupRow(
     val groupId: String,
-    val transactionId: String,   // Firestore doc id for this instalment
+    val transactionIds: List<String>,  // all doc IDs for this installment (>1 if split)
     val customerName: String,
     val planName: String,
-    val accountName: String,
+    val accountName: String,           // joined account names if split
     val emiIndex: Int,
     val emiTotal: Int,
-    val amount: Double,
+    val amount: Double,                // combined amount across all split parts
     val transactionDate: String,
     val dueDate: String,
-    val isSettled: Boolean,
+    val isSettled: Boolean,            // true only if ALL parts settled
     val isPast: Boolean,
-    val isCurrent: Boolean
+    val isCurrent: Boolean,
+    val isSplitInstallment: Boolean    // true if this installment was split
 )
 
 @Composable
@@ -819,43 +820,52 @@ fun EmiScheduleScreen(
             val emiGroups = customer.transactions
                 .filter { it.isEmi }
                 .groupBy { t ->
-                    // Fall back to planName+customer composite key if emiGroupId is blank
                     t.emiGroupId.ifBlank {
                         t.name.substringBefore(" — EMI").trim() + "_" + customer.name
                     }
                 }
 
             emiGroups.forEach { (groupKey, instalments) ->
-                val sorted = instalments.sortedBy { it.transactionDate }
+                // Group by emiIndex — split installments share the same emiIndex
+                val byIndex = instalments.groupBy { it.emiIndex }
 
-                sorted.forEach { t ->
-                    val date = runCatching { LocalDate.parse(t.transactionDate) }.getOrNull()
+                byIndex.forEach { (emiIndex, parts) ->
+                    val first = parts.first()
+                    val date = runCatching { LocalDate.parse(first.transactionDate) }.getOrNull()
                     val isPast = date == null || !date.isAfter(today)
                     val isCurrent = date != null &&
                         date.year == today.year && date.monthValue == today.monthValue
-                    val planName = t.name.substringBefore(" — EMI").trim()
+                    val planName = first.name.substringBefore(" — EMI").trim()
+                    val combinedAmount = parts.sumOf { it.amount }
+                    val allSettled = parts.all { it.isSettled }
+                    val isSplit = parts.size > 1
+                    val accountName = if (isSplit)
+                        parts.mapNotNull { it.accountName.ifBlank { null } }.distinct().joinToString(", ")
+                    else
+                        first.accountName
+
                     result.add(
                         EmiGroupRow(
                             groupId = groupKey,
-                            transactionId = t.id,
+                            transactionIds = parts.map { it.id },
                             customerName = customer.name,
                             planName = planName,
-                            accountName = t.accountName,
-                            emiIndex = t.emiIndex,
-                            emiTotal = t.emiTotal,
-                            amount = t.amount,
-                            transactionDate = t.transactionDate,
-                            dueDate = t.dueDate,
-                            isSettled = t.isSettled,
+                            accountName = accountName,
+                            emiIndex = emiIndex,
+                            emiTotal = first.emiTotal,
+                            amount = combinedAmount,
+                            transactionDate = first.transactionDate,
+                            dueDate = first.dueDate,
+                            isSettled = allSettled,
                             isPast = isPast,
-                            isCurrent = isCurrent
+                            isCurrent = isCurrent,
+                            isSplitInstallment = isSplit
                         )
                     )
                 }
             }
         }
 
-        // Sort: current month first, then future by date, then past by date desc
         result.sortWith(
             compareBy<EmiGroupRow> { if (it.isCurrent) 0 else if (!it.isPast) 1 else 2 }
                 .thenBy { it.transactionDate }
@@ -874,10 +884,10 @@ fun EmiScheduleScreen(
     }
 
     val totalUpcoming = remember(allRows) {
-        allRows.filter { !it.isPast }.sumOf { it.amount }
+        allRows.filter { !it.isPast && !it.isSettled }.sumOf { it.amount }
     }
     val totalPaid = remember(allRows) {
-        allRows.filter { it.isPast && it.isSettled }.sumOf { it.amount }
+        allRows.filter { it.isSettled }.sumOf { it.amount }
     }
     val totalPending = remember(allRows) {
         allRows.filter { it.isPast && !it.isSettled }.sumOf { it.amount }
@@ -947,9 +957,12 @@ fun EmiScheduleScreen(
         groupedByPlan.forEachIndexed { index, (_, rows) ->
             val first = rows.first()
             val groupTotal = rows.sumOf { it.amount }
-            val groupPaid = rows.filter { it.isPast && it.isSettled }.sumOf { it.amount }
+            // Settled = any installment marked as settled (regardless of past/future)
+            val groupPaid = rows.filter { it.isSettled }.sumOf { it.amount }
+            // Pending = past and NOT settled (overdue)
             val groupPending = rows.filter { it.isPast && !it.isSettled }.sumOf { it.amount }
-            val groupUpcoming = rows.filter { !it.isPast }.sumOf { it.amount }
+            // Upcoming = future and NOT settled
+            val groupUpcoming = rows.filter { !it.isPast && !it.isSettled }.sumOf { it.amount }
 
             item(key = first.groupId.ifBlank { "emi_plan_$index" }) {
                 EmiAmortizationCard(
@@ -962,7 +975,8 @@ fun EmiScheduleScreen(
                     groupPending = groupPending,
                     groupUpcoming = groupUpcoming,
                     today = today,
-                    onDeleteGroup = { rows.forEach { vm.deleteTransaction(it.transactionId) } }
+                    vm = vm,
+                    onDeleteGroup = { rows.flatMap { it.transactionIds }.forEach { vm.deleteTransaction(it) } }
                 )
             }
         }
@@ -980,14 +994,16 @@ private fun EmiAmortizationCard(
     groupPending: Double,
     groupUpcoming: Double,
     today: LocalDate,
+    vm: MainViewModel,
     onDeleteGroup: () -> Unit
 ) {
     val groupId = rows.firstOrNull()?.groupId ?: planName
     var expanded by rememberSaveable(groupId) { mutableStateOf(true) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    val progress = if (groupTotal > 0) ((groupPaid + groupPending) / groupTotal).toFloat().coerceIn(0f, 1f) else 0f
-    val completedCount = rows.count { it.isPast }
+    // Progress = settled / total (by count, not amount)
+    val settledCount = rows.count { it.isSettled }
     val totalCount = rows.size
+    val progress = if (totalCount > 0) settledCount.toFloat() / totalCount.toFloat() else 0f
 
     FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
         // Header
@@ -1030,7 +1046,7 @@ private fun EmiAmortizationCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "$completedCount / $totalCount done",
+                            text = "$settledCount / $totalCount done",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 2.dp)
@@ -1115,7 +1131,7 @@ private fun EmiAmortizationCard(
 
             // Instalment rows
             rows.forEachIndexed { idx, row ->
-                EmiTableRow(row = row, today = today)
+                EmiTableRow(row = row, today = today, vm = vm)
                 if (idx != rows.lastIndex) {
                     Divider(
                         modifier = Modifier.padding(vertical = 2.dp),
@@ -1196,7 +1212,7 @@ private fun EmiTableHeader() {
 }
 
 @Composable
-private fun EmiTableRow(row: EmiGroupRow, today: LocalDate) {
+private fun EmiTableRow(row: EmiGroupRow, today: LocalDate, vm: MainViewModel) {
     val statusColor = when {
         row.isSettled -> MaterialTheme.colorScheme.secondary
         row.isCurrent -> warningColor()
@@ -1229,14 +1245,28 @@ private fun EmiTableRow(row: EmiGroupRow, today: LocalDate) {
             color = statusColor,
             modifier = Modifier.width(24.dp)
         )
-        Text(
-            text = formatDisplayDate(row.transactionDate),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1.6f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        // Date + optional Split badge
+        Column(modifier = Modifier.weight(1.6f)) {
+            Text(
+                text = formatDisplayDate(row.transactionDate),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (row.isSplitInstallment) {
+                Text(
+                    text = "Split",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(top = 1.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+            }
+        }
         Text(
             text = formatMoney(row.amount),
             style = MaterialTheme.typography.bodySmall,
@@ -1246,6 +1276,7 @@ private fun EmiTableRow(row: EmiGroupRow, today: LocalDate) {
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
             maxLines = 1
         )
+        // Status badge — tappable to toggle settled for ALL parts of this installment
         Box(
             modifier = Modifier
                 .width(72.dp)
@@ -1260,6 +1291,12 @@ private fun EmiTableRow(row: EmiGroupRow, today: LocalDate) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(statusColor.copy(alpha = 0.13f))
+                    .clickable {
+                        val newSettled = !row.isSettled
+                        row.transactionIds.forEach { id ->
+                            vm.toggleTransactionSettled(id, newSettled)
+                        }
+                    }
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             )
         }
