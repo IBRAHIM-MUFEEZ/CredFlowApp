@@ -1,57 +1,202 @@
-# Radafiq (CredFlow)
+# Radafiq
 
-A comprehensive Android financial management application designed to help users track transactions, manage accounts and customers, monitor savings, and analyze financial data. Built natively with Kotlin and Jetpack Compose, the app emphasizes security, seamless cloud synchronization, and offline capabilities.
+A full-stack financial ledger platform for tracking customer credit, EMI plans, savings, and account dues — available as a native **Android app** (Kotlin + Jetpack Compose) and a **Progressive Web App** (React + TypeScript), both backed by Firebase Firestore with real-time sync.
 
-## 🚀 Features
+🌐 **Web App:** https://radafiq-272f9.web.app
 
-* **Financial Dashboard & Analytics:** Get a clear overview of your financial health with an intuitive dashboard and detailed analytics screens.
-* **Transaction Management:** Easily add and track daily transactions and payments.
-* **Customer & Account Tracking:** Manage multiple accounts and keep detailed records of customer-specific transactions.
-* **Savings Management:** Monitor and manage your savings goals directly within the app.
-* **Robust Security:** Secure your data with Biometric Authentication and Google Sign-In capabilities.
-* **Cloud & Local Backups:** Never lose your data. Seamlessly backup and restore your financial records using Google Drive or local JSON file exports.
-* **PDF Statement Generation:** Generate, preview, and share detailed financial statements seamlessly.
-* **Automated Reminders:** Stay on top of your finances with automated background due date reminders.
+---
+
+## ✨ Features
+
+### Core
+- **Customer Ledger** — Track credit given to each customer with full transaction history, running balance, and account-wise breakdown
+- **Multi-Account Support** — Manage credit cards and bank accounts; transactions are tagged to specific accounts
+- **EMI Plans** — Create instalment schedules with automatic due date calculation; view full amortization table per plan
+- **Split Transactions** — Split a single transaction across multiple accounts or people in one step
+- **Partial Payments** — Record partial collections against any outstanding transaction
+- **Savings Tracker** — Track per-customer savings deposits and withdrawals across bank accounts
+- **Analytics** — Account-level and customer-level usage, paid, and outstanding breakdowns
+
+### EMI Intelligence
+- Installments appear in the transaction list **20 days before their due date** (not just when the transaction month arrives)
+- **Overdue detection** — installments past their due date are flagged with red badges and accent borders
+- **Due Soon alerts** — installments due within 20 days show orange warnings with a countdown
+- EMI tab stats (Settled / Pending / Upcoming) and progress bar update **immediately** when an installment is marked settled
+- Split installments are grouped by `emiIndex` so marking one row settles all parts atomically
+
+### Statements & Export
+- Generate a **PDF customer statement** directly from the customer detail screen (web) or share screen (Android)
+- Statement includes summary metrics, dues overview, full transaction list, and EMI schedule
+- Helvetica font rendering with proper `Rs.` currency prefix
+
+### Security
+- **Passcode lock** with PBKDF2 hashing and a recovery question
+- **Biometric / Passkey unlock** — Windows Hello, Touch ID, Face ID (WebAuthn on web; BiometricPrompt on Android)
+- **Auto-lock** — locks after 5 minutes of inactivity (tab hidden / PC sleep)
+- Firestore rules enforce strict per-user data isolation (`userId == request.auth.uid`)
+- HTTPS-only; no cleartext traffic
+
+### Backup & Restore
+- **JSON export/import** — full backup of all customers, transactions, accounts, payments, and savings
+- **Google Drive backup** (Android) — encrypted remote backup via Drive API
+- One-tap restore from any backup file
+
+### Notifications & Reminders (Android)
+- Background `WorkManager` job checks for upcoming dues daily
+- Push notifications for credit card due dates
+
+---
 
 ## 🛠️ Tech Stack
 
-* **Language:** Kotlin
-* **UI Framework:** Jetpack Compose
-* **Architecture:** MVVM (Model-View-ViewModel)
-* **Backend & Database:** Firebase (Firestore & Authentication)
-* **Security:** Android Biometric API (`BiometricAuthManager`)
-* **Background Tasks:** Android WorkManager (`DueReminderWorker`, `DueReminderScheduler`)
-* **Cloud Integration:** Google Drive API (for remote backup/restore functionality)
+### Android
+| Layer | Technology |
+|---|---|
+| Language | Kotlin |
+| UI | Jetpack Compose + Material 3 |
+| Architecture | MVVM |
+| Navigation | Navigation Compose |
+| Backend | Firebase Firestore + Firebase Auth |
+| Auth | Google Sign-In + Biometric API |
+| Background | WorkManager |
+| Security | AndroidX Security Crypto, PBKDF2 |
+| Image loading | Coil |
+| Min SDK | 24 (Android 7.0) |
+| Target SDK | 35 (Android 15) |
 
-## 📁 Core Project Structure
+### Web App
+| Layer | Technology |
+|---|---|
+| Language | TypeScript |
+| UI | React 18 + custom CSS |
+| Routing | React Router v6 |
+| Backend | Firebase Firestore + Firebase Auth |
+| Auth | Google Sign-In (popup + redirect) + WebAuthn |
+| PDF | jsPDF 4 |
+| Build | Vite 6 |
+| Hosting | Firebase Hosting |
 
-* `com.radafiq.data.*`: Contains repositories and models for authentication, backups (Drive & Local), user profiles, settings, and Firebase interactions.
-* `com.radafiq.ui.*`: Houses all Jetpack Compose UI screens (`DashboardScreen`, `AccountsScreen`, `AnalyticsScreen`, etc.) and the core design system (`CredFlowTheme`).
-* `com.radafiq.viewmodel.*`: Contains the `MainViewModel` for handling business logic and UI state management.
-* `com.radafiq.security.*`: Manages biometric and local app security implementations.
-* `com.radafiq.reminders.*`: Manages background workers for scheduling and pushing payment/due reminders to the user.
+---
 
-## ⚙️ Getting Started
+## 📁 Project Structure
+
+```
+Radafiq/
+├── app/                          # Android app
+│   └── src/main/java/com/radafiq/
+│       ├── data/
+│       │   ├── auth/             # Google Sign-In, local identity
+│       │   ├── backup/           # Drive backup, file backup, statement generator
+│       │   ├── models/           # Data models
+│       │   ├── profile/          # User profile repository
+│       │   ├── repository/       # Firebase Firestore repository
+│       │   ├── security/         # App security (passcode, biometric)
+│       │   └── settings/         # App settings
+│       │
+│       ├── reminders/            # WorkManager due reminder scheduler
+│       ├── security/             # BiometricAuthManager
+│       │
+│       ├── ui/                   # Jetpack Compose screens
+│       │   ├── DashboardScreen
+│       │   ├── CustomersScreen
+│       │   ├── AccountsScreen
+│       │   ├── AnalyticsScreen
+│       │   ├── SavingsScreen
+│       │   └── SettingsScreen
+│       │
+│       └── viewmodel/
+│           └── MainViewModel
+│
+├── web-app/                      # Progressive Web App
+│   └── src/
+│       ├── components/
+│       ├── context/
+│       ├── pages/
+│       │   ├── Dashboard
+│       │   ├── CustomersPage
+│       │   ├── CustomerDetail
+│       │   ├── AccountsPage
+│       │   ├── AccountDetail
+│       │   ├── EmiSchedulePage
+│       │   ├── AnalyticsPage
+│       │   ├── SavingsPage
+│       │   └── SettingsPage
+│       │
+│       ├── services/
+│       │   └── firebaseRepository.ts
+│       │
+│       ├── types/
+│       │   └── models.ts
+│       │
+│       └── utils/
+│           ├── format.ts
+│           └── statementGenerator.ts
+```
+
+## ⚙️ Setup
 
 ### Prerequisites
+- [Android Studio](https://developer.android.com/studio) (Hedgehog or later) — for Android
+- Node.js 18+ and npm — for web app
+- A Firebase project with **Firestore** and **Google Authentication** enabled
 
-* [Android Studio](https://developer.android.com/studio) (Latest version recommended)
-* A Firebase Project with Firestore and Google Authentication enabled.
+### Firebase Setup (both platforms)
 
-### Installation
+1. Go to [Firebase Console](https://console.firebase.google.com) → create a project
+2. Enable **Authentication → Google** sign-in provider
+3. Enable **Firestore Database** in production mode
+4. Apply the security rules from `firestore.rules`:
+rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { match /users/{userId}/{document=**} { allow read, write: if request.auth != null && request.auth.uid == userId; } } }
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/ibrahim-mufeez/radafiq.git](https://github.com/ibrahim-mufeez/radafiq.git)
-    ```
-2.  **Open the project:**
-    Open the cloned directory in Android Studio.
-3.  **Firebase Setup:**
-    * Download your `google-services.json` file from your Firebase console.
-    * Place the `google-services.json` file in the `app/` directory.
-4.  **Build and Run:**
-    Sync the Gradle files and run the application on an emulator or a physical device.
 
-## 🛡️ Security & Privacy
+⚙️ Setup
+📱 Android
+# 1. Clone repository
+git clone https://github.com/IBRAHIM-MUFEEZ/Radafiq.git
+cd Radafiq
+# 2. Add Firebase config
+Download google-services.json from Firebase Console
+Place it at:
+app/google-services.json
+# 3. Open in Android Studio
+- Sync Gradle
+- Run on device or emulator (API 24+)
 
-Radafiq prioritizes user privacy by utilizing local biometric prompts and customizable backup serialization (`BackupJsonSerializer`) to ensure that financial data remains securely encrypted and accessible only to the authorized user.
+🌐 Web App
+# Navigate to web app
+cd web-app
+
+# 1. Install dependencies
+npm install
+
+# 2. Create environment file
+cp .env.example .env.local
+# Add your Firebase config in .env.local
+
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_GOOGLE_WEB_CLIENT_ID=...
+# 3. Run locally
+npm run dev
+
+# 4. Build for production
+npm run build
+
+# 5. Deploy to Firebase Hosting
+npx firebase deploy --only hosting
+🔐 Security Notes
+Firestore data is scoped to the authenticated user's UID
+Passcodes are hashed using PBKDF2 + random salt and stored locally only
+Biometric / Passkey authentication:
+Web → WebAuthn
+Android → BiometricPrompt
+Web app enforces:
+HTTPS-only (Firebase Hosting)
+Strict Content Security Policy (CSP)
+Android enforces:
+usesCleartextTraffic="false"
+Secure network security configuration
