@@ -896,6 +896,7 @@ fun CustomerDetailScreen(
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
     var transactionFilter by remember { mutableStateOf(TransactionTypeFilter.ALL) }
     var showShareDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     // Auto-reopen dialog if a draft exists for this customer (e.g. after biometric lock)
     val draft by vm.draftTransaction.collectAsState()
@@ -926,6 +927,7 @@ fun CustomerDetailScreen(
 
     // Account breakdown — group all visible transactions by account name+kind
     data class AccountBreakdown(
+        val accountId: String,
         val accountName: String,
         val accountKind: AccountKind,
         val totalUsed: Double,
@@ -941,6 +943,7 @@ fun CustomerDetailScreen(
             val existing = map[key]
             if (existing == null) {
                 map[key] = AccountBreakdown(
+                    accountId = t.accountId,
                     accountName = t.accountName,
                     accountKind = t.accountKind,
                     totalUsed = t.amount,
@@ -957,6 +960,52 @@ fun CustomerDetailScreen(
             compareByDescending<AccountBreakdown> { it.totalDue }
                 .thenByDescending { it.totalUsed }
         )
+    }
+
+    // ── Account-level payment state ───────────────────────────────────────────
+    // Holds the breakdown row for which the payment dialog is open
+    var accountPayTarget by remember { mutableStateOf<AccountBreakdown?>(null) }
+    var accountPayAmount by remember { mutableStateOf("") }
+    // Per-account saving flag — only the tapped row shows spinner
+    var accountPaySavingId by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * Distribute [paymentAmount] across all unsettled transactions for [accountId],
+     * sorted oldest-first. Greedily settles transactions that are fully covered and
+     * applies a partial payment to the first transaction that is only partially covered.
+     *
+     * Uses the *Await suspend variants so each Firestore write completes before the
+     * next one starts — preventing fire-and-forget race conditions.
+     * Amounts are rounded to 2 decimal places to eliminate floating-point residuals.
+     */
+    suspend fun applyAccountPayment(accountId: String, paymentAmount: Double) {
+        val today = LocalDate.now()
+        val unsettled = customer.transactions
+            .filter { t ->
+                t.accountId == accountId &&
+                !t.isSettled &&
+                t.isVisibleInTransactions(today)
+            }
+            .sortedBy { it.transactionDate }
+
+        // Round to paise to eliminate floating-point residuals (e.g. 0.000000001)
+        fun round(v: Double) = Math.round(v * 100).toDouble() / 100.0
+
+        var remaining = round(paymentAmount)
+        for (txn in unsettled) {
+            if (remaining <= 0.0) break
+            val due = round((txn.amount - txn.partialPaidAmount).coerceAtLeast(0.0))
+            if (due <= 0.0) continue
+            if (remaining >= due) {
+                // Fully covers — await the settle write before moving on
+                vm.toggleTransactionSettledAwait(txn.id, true)
+                remaining = round(remaining - due)
+            } else {
+                // Partially covers — await the partial payment write and stop
+                vm.addPartialPaymentAwait(txn.id, remaining)
+                remaining = 0.0
+            }
+        }
     }
 
     RadafiqBackground {
@@ -1099,57 +1148,119 @@ fun CustomerDetailScreen(
                                     AccountKind.BANK_ACCOUNT -> "Bank Account"
                                     else -> breakdown.accountKind.label
                                 }
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(accent.copy(alpha = 0.07f))
                                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(accent)
-                                        )
-                                        Column {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(accent)
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = breakdown.accountName,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = kindLabel,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = accent
+                                                )
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = breakdown.accountName,
+                                                text = formatMoney(breakdown.totalUsed),
                                                 style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                fontWeight = FontWeight.Bold,
+                                                color = accent
                                             )
                                             Text(
-                                                text = kindLabel,
+                                                text = if (breakdown.totalDue > 0.0)
+                                                    "Due ${formatMoney(breakdown.totalDue)}"
+                                                else "✓ Settled",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = accent
+                                                color = if (breakdown.totalDue > 0.0) warningColor()
+                                                        else MaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(
-                                            text = formatMoney(breakdown.totalUsed),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = accent
-                                        )
-                                        Text(
-                                            text = if (breakdown.totalDue > 0.0)
-                                                "Due ${formatMoney(breakdown.totalDue)}"
-                                            else "✓ Settled",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (breakdown.totalDue > 0.0) warningColor()
-                                                    else MaterialTheme.colorScheme.primary
-                                        )
+                                    // Pay buttons — only show when there is an outstanding due
+                                    if (breakdown.totalDue > 0.0) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Partial pay button
+                                            OutlinedButton(
+                                                onClick = {
+                                                    accountPayTarget = breakdown
+                                                    accountPayAmount = ""
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                                    horizontal = 8.dp, vertical = 4.dp
+                                                ),
+                                                border = BorderStroke(1.dp, accent.copy(alpha = 0.5f)),
+                                                enabled = accountPaySavingId != breakdown.accountId
+                                            ) {
+                                                Text(
+                                                    "Partial Pay",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = accent
+                                                )
+                                            }
+                                            // Full payment button
+                                            Button(
+                                                onClick = {
+                                                    coroutineScope.launch {
+                                                        accountPaySavingId = breakdown.accountId
+                                                        try {
+                                                            applyAccountPayment(
+                                                                breakdown.accountId,
+                                                                breakdown.totalDue
+                                                            )
+                                                        } finally {
+                                                            accountPaySavingId = null
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                                    horizontal = 8.dp, vertical = 4.dp
+                                                ),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = accent
+                                                ),
+                                                enabled = accountPaySavingId != breakdown.accountId
+                                            ) {
+                                                Text(
+                                                    if (accountPaySavingId == breakdown.accountId) "Saving…" else "Full Payment",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1333,6 +1444,72 @@ fun CustomerDetailScreen(
         ShareStatementDialog(
             customer = customer,
             onDismiss = { showShareDialog = false }
+        )
+    }
+
+    // ── Account-level payment dialog ──────────────────────────────────────────
+    accountPayTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (accountPaySavingId == null) accountPayTarget = null },
+            title = {
+                Text(
+                    text = "Pay — ${target.accountName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Outstanding: ${formatMoney(target.totalDue)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = warningColor()
+                    )
+                    Text(
+                        text = "Enter an amount to pay. The payment will be applied to the oldest unsettled transactions first, settling each one fully before moving to the next.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = accountPayAmount,
+                        onValueChange = { accountPayAmount = it },
+                        label = { Text("Amount") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = accountPaySavingId == null
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amount = accountPayAmount.toDoubleOrNull() ?: return@Button
+                        if (amount <= 0.0) return@Button
+                        coroutineScope.launch {
+                            accountPaySavingId = target.accountId
+                            try {
+                                applyAccountPayment(target.accountId, amount)
+                            } finally {
+                                accountPaySavingId = null
+                                accountPayTarget = null
+                            }
+                        }
+                    },
+                    enabled = accountPaySavingId == null &&
+                        (accountPayAmount.toDoubleOrNull() ?: 0.0) > 0.0
+                ) {
+                    Text(if (accountPaySavingId != null) "Saving…" else "Apply Payment")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { accountPayTarget = null },
+                    enabled = accountPaySavingId == null
+                ) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }

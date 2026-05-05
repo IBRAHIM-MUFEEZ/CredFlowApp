@@ -523,6 +523,31 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Suspend version of toggleTransactionSettled — awaits the Firestore write.
+     * Use this when sequential ordering of writes matters (e.g. payment distribution).
+     */
+    suspend fun toggleTransactionSettledAwait(transactionId: String, isSettled: Boolean) {
+        repository.toggleTransactionSettled(
+            transactionId = transactionId,
+            isSettled = isSettled,
+            settledDate = if (isSettled) LocalDate.now().toString() else ""
+        )
+    }
+
+    /**
+     * Suspend version of addPartialPayment — awaits the Firestore write.
+     * Use this when sequential ordering of writes matters (e.g. payment distribution).
+     */
+    suspend fun addPartialPaymentAwait(transactionId: String, amount: Double) {
+        if (amount <= 0.0) return
+        repository.addPartialPayment(
+            transactionId = transactionId,
+            amount = amount,
+            date = LocalDate.now().toString()
+        )
+    }
+
     fun addSplitTransactions(
         customerId: String,
         customerName: String,

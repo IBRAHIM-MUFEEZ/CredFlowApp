@@ -600,6 +600,7 @@ export default function CustomerDetail() {
   const accountBreakdowns = useMemo(() => {
     const today = new Date();
     const map = new Map<string, {
+      accountId: string;
       accountName: string;
       accountKind: AccountKind;
       totalUsed: number;
@@ -612,13 +613,60 @@ export default function CustomerDetail() {
         const due = t.isSettled ? 0 : Math.max(0, t.amount - t.partialPaidAmount);
         const existing = map.get(key);
         if (!existing) {
-          map.set(key, { accountName: t.accountName, accountKind: t.accountKind, totalUsed: t.amount, totalDue: due });
+          map.set(key, { accountId: t.accountId, accountName: t.accountName, accountKind: t.accountKind, totalUsed: t.amount, totalDue: due });
         } else {
           map.set(key, { ...existing, totalUsed: existing.totalUsed + t.amount, totalDue: existing.totalDue + due });
         }
       });
     return Array.from(map.values()).sort((a, b) => b.totalDue - a.totalDue || b.totalUsed - a.totalUsed);
   }, [customer.transactions]);
+
+  // ── Account-level payment state ─────────────────────────────────────────────
+  const [accountPayTarget, setAccountPayTarget] = useState<{
+    accountId: string;
+    accountName: string;
+    totalDue: number;
+  } | null>(null);
+  const [accountPayAmount, setAccountPayAmount] = useState('');
+  // Per-account saving state — keyed by accountId so only the tapped row shows spinner
+  const [accountPaySavingId, setAccountPaySavingId] = useState<string | null>(null);
+
+  /**
+   * Distribute paymentAmount across all unsettled transactions for accountId,
+   * sorted oldest-first. Greedily settles transactions that are fully covered
+   * and applies a partial payment to the first partially-covered transaction.
+   *
+   * Uses Math.round to avoid floating-point residuals (e.g. 0.000000001)
+   * that would cause the loop to continue past zero.
+   */
+  const applyAccountPayment = async (accountId: string, paymentAmount: number) => {
+    const today = new Date();
+    const unsettled = customer.transactions
+      .filter(t =>
+        t.accountId === accountId &&
+        !t.isSettled &&
+        isVisibleInTransactions(t, today)
+      )
+      .sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+
+    // Round to paise (2 decimal places) to eliminate floating-point residuals
+    let remaining = Math.round(paymentAmount * 100) / 100;
+
+    for (const txn of unsettled) {
+      if (remaining <= 0) break;
+      const due = Math.round(Math.max(0, txn.amount - txn.partialPaidAmount) * 100) / 100;
+      if (due <= 0) continue;
+      if (remaining >= due) {
+        // Fully covers this transaction — settle it
+        await toggleTransactionSettled(txn.id, true);
+        remaining = Math.round((remaining - due) * 100) / 100;
+      } else {
+        // Partially covers — add partial payment and stop
+        await addPartialPayment(txn.id, String(remaining));
+        remaining = 0;
+      }
+    }
+  };
 
   return (
     <div className="page-content">
@@ -713,30 +761,71 @@ export default function CustomerDetail() {
               return (
                 <div key={i} style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  flexDirection: 'column',
+                  gap: 8,
                   background: `color-mix(in srgb, ${accent} 8%, transparent)`,
                   borderRadius: 10,
                   padding: '8px 12px',
                   border: `1px solid color-mix(in srgb, ${accent} 20%, transparent)`,
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent, flexShrink: 0 }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {b.accountName}
+                  {/* Account info row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {b.accountName}
+                        </div>
+                        <div style={{ fontSize: '0.6875rem', color: accent }}>{kindLabel}</div>
                       </div>
-                      <div style={{ fontSize: '0.6875rem', color: accent }}>{kindLabel}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: accent }}>
+                        {formatMoney(b.totalUsed)}
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: b.totalDue > 0 ? 'var(--warning)' : 'var(--primary)' }}>
+                        {b.totalDue > 0 ? `Due ${formatMoney(b.totalDue)}` : '✓ Settled'}
+                      </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: accent }}>
-                      {formatMoney(b.totalUsed)}
+                  {/* Pay buttons — only when there is an outstanding due */}
+                  {b.totalDue > 0 && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        style={{
+                          flex: 1, fontSize: '0.75rem', padding: '4px 10px',
+                          borderColor: `color-mix(in srgb, ${accent} 50%, transparent)`,
+                          color: accent,
+                        }}
+                        onClick={() => {
+                          setAccountPayTarget({ accountId: b.accountId, accountName: b.accountName, totalDue: b.totalDue });
+                          setAccountPayAmount('');
+                        }}
+                        disabled={accountPaySavingId === b.accountId}
+                      >
+                        Partial Pay
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          flex: 1, fontSize: '0.75rem', padding: '4px 10px',
+                          background: accent, color: '#fff', border: 'none',
+                        }}
+                        onClick={async () => {
+                          setAccountPaySavingId(b.accountId);
+                          try {
+                            await applyAccountPayment(b.accountId, b.totalDue);
+                          } finally {
+                            setAccountPaySavingId(null);
+                          }
+                        }}
+                        disabled={accountPaySavingId === b.accountId}
+                      >
+                        {accountPaySavingId === b.accountId ? 'Saving…' : 'Full Payment'}
+                      </button>
                     </div>
-                    <div style={{ fontSize: '0.6875rem', color: b.totalDue > 0 ? 'var(--warning)' : 'var(--primary)' }}>
-                      {b.totalDue > 0 ? `Due ${formatMoney(b.totalDue)}` : '✓ Settled'}
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -1205,6 +1294,65 @@ export default function CustomerDetail() {
                 }}
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account-level payment dialog */}
+      {accountPayTarget && (
+        <div className="modal-overlay" onClick={() => { if (!accountPaySavingId) setAccountPayTarget(null); }}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">Pay — {accountPayTarget.accountName}</h3>
+            <p className="modal-subtitle">
+              Outstanding: <strong>{formatMoney(accountPayTarget.totalDue)}</strong>
+            </p>
+            <p className="modal-subtitle" style={{ marginTop: 4 }}>
+              The payment is applied to the oldest unsettled transactions first,
+              settling each fully before moving to the next.
+            </p>
+            <div className="form-group" style={{ margin: '1rem 0' }}>
+              <label className="form-label">Amount</label>
+              <input
+                className="form-input"
+                type="number"
+                value={accountPayAmount}
+                onChange={e => setAccountPayAmount(e.target.value)}
+                placeholder="0.00"
+                autoFocus
+                disabled={!!accountPaySavingId}
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn btn-outline"
+                onClick={() => setAccountPayTarget(null)}
+                disabled={!!accountPaySavingId}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={
+                  !!accountPaySavingId ||
+                  !accountPayAmount ||
+                  parseFloat(accountPayAmount) <= 0
+                }
+                onClick={async () => {
+                  const amount = parseFloat(accountPayAmount);
+                  if (isNaN(amount) || amount <= 0) return;
+                  const targetId = accountPayTarget.accountId;
+                  setAccountPaySavingId(targetId);
+                  try {
+                    await applyAccountPayment(targetId, amount);
+                    setAccountPayTarget(null);
+                  } finally {
+                    setAccountPaySavingId(null);
+                  }
+                }}
+              >
+                {accountPaySavingId ? 'Saving…' : 'Apply Payment'}
               </button>
             </div>
           </div>
