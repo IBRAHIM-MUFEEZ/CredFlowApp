@@ -106,9 +106,20 @@ import kotlinx.coroutines.launch
 
 // Count split groups as 1 logical transaction each
 internal fun List<CustomerTransaction>.countLogicalTransactions(): Int {
-    val splitGroups = filter { it.splitGroupId.isNotBlank() }.map { it.splitGroupId }.toSet()
-    val singles = count { it.splitGroupId.isBlank() }
-    return singles + splitGroups.size
+    // BUG-19: Use a MutableSet and check add() return value to avoid double-counting
+    val seenSplitGroups = mutableSetOf<String>()
+    var count = 0
+    forEach { t ->
+        if (t.splitGroupId.isBlank()) {
+            count++
+        } else {
+            // add() returns true only if the element was not already present
+            if (seenSplitGroups.add(t.splitGroupId)) {
+                count++
+            }
+        }
+    }
+    return count
 }
 
 private enum class CustomerViewMode(val label: String) {
@@ -425,6 +436,8 @@ fun CustomerCard(
     var showAddTransaction by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<CustomerTransaction?>(null) }
     var transactionFilter by remember(customer.id) { mutableStateOf(TransactionTypeFilter.ALL) }
+    // FIX-17: Confirmation dialog state before deleting a customer
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // Auto-reopen dialog if a draft exists for this customer (e.g. after biometric lock)
     val draft by vm.draftTransaction.collectAsState()
@@ -442,13 +455,11 @@ fun CustomerCard(
             TransactionTypeFilter.PERSON -> { t -> t.accountKind == AccountKind.PERSON }
         }
         val today = java.time.LocalDate.now()
+        // BUG-17: Do NOT pre-sort here — buildGroupedTransactions handles sorting by group date/total.
+        // Pre-sorting by individual amount before grouping produces incorrect group order for splits.
         customer.transactions
             .filter { t -> t.isVisibleInTransactions(today) }
             .let { if (predicate == null) it else it.filter(predicate) }
-            .sortedWith(
-                compareByDescending<CustomerTransaction> { it.transactionDate }
-                    .thenByDescending { it.amount }
-            )
     }
     FlowCard(
         accentColor = MaterialTheme.colorScheme.primary,
@@ -529,10 +540,8 @@ fun CustomerCard(
                                 }
                                 IconButton(
                                     onClick = {
-                                        vm.deleteCustomer(
-                                            customerId = customer.id,
-                                            customerName = customer.name
-                                        )
+                                        // FIX-17: Show confirmation before deleting
+                                        showDeleteConfirm = true
                                     }
                                 ) {
                                     Icon(
@@ -612,8 +621,11 @@ fun CustomerCard(
 
                 val today = java.time.LocalDate.now()
 
+                // BUG-09: Use remember to avoid recomputing grouped transactions on every recomposition
                 // filteredTransactions is already visibility-filtered and type-filtered
-                val grouped = buildGroupedTransactions(filteredTransactions)
+                val grouped = remember(filteredTransactions) {
+                    buildGroupedTransactions(filteredTransactions)
+                }
 
                 if (grouped.isEmpty()) {
                     EmptyInlineState("No transactions for this selection.")
@@ -796,6 +808,34 @@ fun CustomerCard(
         )
     }
 
+    // FIX-17: Confirmation dialog before moving customer to recycle bin
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Move to Recycle Bin?") },
+            text = {
+                Text(
+                    "\"${customer.name}\" will be moved to the Recycle Bin. " +
+                    "You can restore or permanently delete them from there.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        vm.deleteCustomer(customerId = customer.id, customerName = customer.name)
+                    }
+                ) {
+                    Text("Move to Bin", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
 }
 
 // ── Simple list row — tapping opens the detail screen ────────────────────────
@@ -834,7 +874,8 @@ fun CustomerListRow(
                 }
                 Column(modifier = Modifier.padding(start = 10.dp)) {
                     Text(
-                        text = customer.name,
+                        // BUG-07: Guard against blank customer names
+                        text = customer.name.ifBlank { "Unnamed Customer" },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -914,13 +955,11 @@ fun CustomerDetailScreen(
             TransactionTypeFilter.PERSON -> { t -> t.accountKind == AccountKind.PERSON }
         }
         val today = LocalDate.now()
+        // BUG-35: Do NOT pre-sort here — buildGroupedTransactions handles sorting by group date/total.
+        // Pre-sorting by individual amount before grouping produces incorrect group order for splits.
         val visible = customer.transactions
             .filter { t -> t.isVisibleInTransactions(today) }
             .let { if (predicate == null) it else it.filter(predicate) }
-            .sortedWith(
-                compareByDescending<CustomerTransaction> { it.transactionDate }
-                    .thenByDescending { it.amount }
-            )
         buildGroupedTransactions(visible)
     }
     val groupedTransactions = filteredTransactions
@@ -1209,7 +1248,7 @@ fun CustomerDetailScreen(
                                     if (breakdown.totalDue > 0.0) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                                         ) {
                                             // Partial pay button
                                             OutlinedButton(
@@ -1217,9 +1256,8 @@ fun CustomerDetailScreen(
                                                     accountPayTarget = breakdown
                                                     accountPayAmount = ""
                                                 },
-                                                modifier = Modifier.weight(1f),
                                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                                    horizontal = 8.dp, vertical = 4.dp
+                                                    horizontal = 12.dp, vertical = 4.dp
                                                 ),
                                                 border = BorderStroke(1.dp, accent.copy(alpha = 0.5f)),
                                                 enabled = accountPaySavingId != breakdown.accountId
@@ -1245,9 +1283,8 @@ fun CustomerDetailScreen(
                                                         }
                                                     }
                                                 },
-                                                modifier = Modifier.weight(1f),
                                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                                    horizontal = 8.dp, vertical = 4.dp
+                                                    horizontal = 12.dp, vertical = 4.dp
                                                 ),
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = accent
@@ -1459,6 +1496,8 @@ fun CustomerDetailScreen(
                 )
             },
             text = {
+                val enteredAmount = accountPayAmount.toDoubleOrNull()
+                val exceedsOutstanding = enteredAmount != null && enteredAmount > target.totalDue
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = "Outstanding: ${formatMoney(target.totalDue)}",
@@ -1477,15 +1516,20 @@ fun CustomerDetailScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = accountPaySavingId == null
+                        enabled = accountPaySavingId == null,
+                        isError = exceedsOutstanding,
+                        supportingText = if (exceedsOutstanding) {
+                            { Text("Cannot exceed outstanding ${formatMoney(target.totalDue)}") }
+                        } else null
                     )
                 }
             },
             confirmButton = {
+                val enteredAmount = accountPayAmount.toDoubleOrNull()
                 Button(
                     onClick = {
-                        val amount = accountPayAmount.toDoubleOrNull() ?: return@Button
-                        if (amount <= 0.0) return@Button
+                        val amount = enteredAmount ?: return@Button
+                        if (amount <= 0.0 || amount > target.totalDue) return@Button
                         coroutineScope.launch {
                             accountPaySavingId = target.accountId
                             try {
@@ -1497,7 +1541,9 @@ fun CustomerDetailScreen(
                         }
                     },
                     enabled = accountPaySavingId == null &&
-                        (accountPayAmount.toDoubleOrNull() ?: 0.0) > 0.0
+                        enteredAmount != null &&
+                        enteredAmount > 0.0 &&
+                        enteredAmount <= target.totalDue
                 ) {
                     Text(if (accountPaySavingId != null) "Saving…" else "Apply Payment")
                 }

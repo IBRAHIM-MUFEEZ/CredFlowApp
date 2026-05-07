@@ -790,11 +790,11 @@ export default function CustomerDetail() {
                   </div>
                   {/* Pay buttons — only when there is an outstanding due */}
                   {b.totalDue > 0 && (
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <button
                         className="btn btn-outline btn-sm"
                         style={{
-                          flex: 1, fontSize: '0.75rem', padding: '4px 10px',
+                          fontSize: '0.75rem', padding: '4px 12px',
                           borderColor: `color-mix(in srgb, ${accent} 50%, transparent)`,
                           color: accent,
                         }}
@@ -809,7 +809,7 @@ export default function CustomerDetail() {
                       <button
                         className="btn btn-sm"
                         style={{
-                          flex: 1, fontSize: '0.75rem', padding: '4px 10px',
+                          fontSize: '0.75rem', padding: '4px 12px',
                           background: accent, color: '#fff', border: 'none',
                         }}
                         onClick={async () => {
@@ -1322,7 +1322,24 @@ export default function CustomerDetail() {
                 placeholder="0.00"
                 autoFocus
                 disabled={!!accountPaySavingId}
+                style={{
+                  borderColor: (() => {
+                    const v = parseFloat(accountPayAmount);
+                    return !isNaN(v) && v > accountPayTarget.totalDue ? 'var(--red)' : undefined;
+                  })(),
+                }}
               />
+              {(() => {
+                const v = parseFloat(accountPayAmount);
+                if (!isNaN(v) && v > accountPayTarget.totalDue) {
+                  return (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--red)', marginTop: 4 }}>
+                      Amount cannot exceed outstanding {formatMoney(accountPayTarget.totalDue)}
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
             <div className="modal-actions">
               <button
@@ -1337,11 +1354,12 @@ export default function CustomerDetail() {
                 disabled={
                   !!accountPaySavingId ||
                   !accountPayAmount ||
-                  parseFloat(accountPayAmount) <= 0
+                  parseFloat(accountPayAmount) <= 0 ||
+                  parseFloat(accountPayAmount) > accountPayTarget.totalDue
                 }
                 onClick={async () => {
                   const amount = parseFloat(accountPayAmount);
-                  if (isNaN(amount) || amount <= 0) return;
+                  if (isNaN(amount) || amount <= 0 || amount > accountPayTarget.totalDue) return;
                   const targetId = accountPayTarget.accountId;
                   setAccountPaySavingId(targetId);
                   try {

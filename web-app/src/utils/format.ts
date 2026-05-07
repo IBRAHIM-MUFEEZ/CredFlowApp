@@ -51,14 +51,89 @@ export function currentTimestampLabel(): string {
   });
 }
 
+/**
+ * CSP-safe math expression evaluator.
+ *
+ * Supports: + - * /  parentheses  decimals  whitespace
+ * Does NOT use eval() or new Function() — safe under strict script-src CSP.
+ *
+ * Grammar (recursive descent):
+ *   expr   = term   (('+' | '-') term)*
+ *   term   = factor (('*' | '/') factor)*
+ *   factor = NUMBER | '(' expr ')' | '-' factor
+ */
 export function evaluateExpression(expr: string): number | null {
+  if (!expr || !expr.trim()) return null;
+
+  // Reject anything that isn't digits, operators, parens, dots, or whitespace
+  if (!/^[\d\s+\-*/().]+$/.test(expr)) return null;
+
+  const src = expr.replace(/\s+/g, ''); // strip whitespace
+  let pos = 0;
+
+  function peek(): string { return src[pos] ?? ''; }
+  function consume(): string { return src[pos++] ?? ''; }
+
+  function parseNumber(): number | null {
+    let s = '';
+    if (peek() === '-') { s += consume(); }
+    while (/[\d.]/.test(peek())) { s += consume(); }
+    if (!s || s === '-' || s === '.') return null;
+    const n = parseFloat(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function parseFactor(): number | null {
+    if (peek() === '(') {
+      consume(); // '('
+      const val = parseExpr();
+      if (peek() !== ')') return null;
+      consume(); // ')'
+      return val;
+    }
+    if (peek() === '-') {
+      consume();
+      const val = parseFactor();
+      return val === null ? null : -val;
+    }
+    return parseNumber();
+  }
+
+  function parseTerm(): number | null {
+    let left = parseFactor();
+    if (left === null) return null;
+    while (peek() === '*' || peek() === '/') {
+      const op = consume();
+      const right = parseFactor();
+      if (right === null) return null;
+      if (op === '*') left *= right;
+      else {
+        if (right === 0) return null; // division by zero
+        left /= right;
+      }
+    }
+    return left;
+  }
+
+  function parseExpr(): number | null {
+    let left = parseTerm();
+    if (left === null) return null;
+    while (peek() === '+' || peek() === '-') {
+      const op = consume();
+      const right = parseTerm();
+      if (right === null) return null;
+      if (op === '+') left += right;
+      else left -= right;
+    }
+    return left;
+  }
+
   try {
-    // Only allow safe math characters
-    if (!/^[\d\s+\-*/().]+$/.test(expr)) return null;
-    // eslint-disable-next-line no-new-func
-    const result = Function('"use strict"; return (' + expr + ')')();
-    if (typeof result === 'number' && isFinite(result)) return result;
-    return null;
+    const result = parseExpr();
+    // Ensure we consumed the entire input (no trailing garbage)
+    if (pos !== src.length) return null;
+    if (result === null || !isFinite(result)) return null;
+    return result;
   } catch {
     return null;
   }

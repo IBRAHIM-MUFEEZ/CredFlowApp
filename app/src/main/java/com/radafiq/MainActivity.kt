@@ -87,6 +87,16 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    // FIX-6: Re-apply FLAG_SECURE on every resume so it survives theme changes and
+    // activity recreation on some OEM ROMs.
+    override fun onResume() {
+        super.onResume()
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+    }
+
     @Composable
     private fun AppRoot() {
         val settingsRepository = remember { AppSettingsRepository(applicationContext) }
@@ -139,6 +149,12 @@ class MainActivity : FragmentActivity() {
                 val name = account.displayName.orEmpty()
                 val email = account.email.orEmpty()
                 val photo = account.photoUrl?.toString().orEmpty()
+                // BUG-04: Validate that email is non-null/non-blank before proceeding
+                if (email.isBlank()) {
+                    android.util.Log.w("MainActivity", "Google Sign-In returned account with blank email — aborting")
+                    profileGoogleSignInInProgress = false
+                    return@rememberLauncherForActivityResult
+                }
                 if (email.isNotBlank()) {
                     loginRestoreInProgress = true
                     profileGoogleSignInInProgress = false
@@ -555,9 +571,26 @@ class MainActivity : FragmentActivity() {
                         recoveryQuestion = securityState.recoveryQuestion,
                         errorMessage = lockErrorMessage,
                         onUnlockWithPasscode = { passcode ->
-                            val unlocked = securityRepository.verifyPasscode(passcode)
-                            lockErrorMessage = if (unlocked) "" else "Incorrect passcode."
-                            unlocked
+                            val remainingMs = securityRepository.lockoutRemainingMs()
+                            if (remainingMs > 0) {
+                                val seconds = (remainingMs / 1000).coerceAtLeast(1)
+                                lockErrorMessage = "Too many attempts. Try again in ${seconds}s."
+                                false
+                            } else {
+                                val unlocked = securityRepository.verifyPasscode(passcode)
+                                lockErrorMessage = if (unlocked) {
+                                    ""
+                                } else {
+                                    val attempts = securityRepository.failedAttemptCount()
+                                    when {
+                                        attempts >= 10 -> "Too many attempts. Locked for 10 minutes."
+                                        attempts >= 7  -> "Too many attempts. Locked for 2 minutes."
+                                        attempts >= 5  -> "Too many attempts. Locked for 30 seconds."
+                                        else           -> "Incorrect passcode."
+                                    }
+                                }
+                                unlocked
+                            }
                         },
                         onUnlockWithBiometric = if (securityState.biometricEnabled && biometricAvailable) {
                             {

@@ -75,7 +75,8 @@ fun AccountsScreen(
                 .filter { it.accountKind == AccountKind.PERSON && it.isVisibleInTransactions() }
                 .forEach { txn ->
                     val key = txn.accountId
-                    val name = txn.personName.ifBlank { txn.accountName }
+                    // BUG-01: Ensure name is never blank — fall back through multiple sources
+                    val name = txn.personName.ifBlank { txn.accountName }.ifBlank { txn.accountId }.ifBlank { "Unknown" }
                     val used = txn.amount
                     val due = if (txn.isSettled) 0.0 else (txn.amount - txn.partialPaidAmount).coerceAtLeast(0.0)
                     val existing = map[key]
@@ -630,6 +631,14 @@ fun CreditCardDueDialog(
                     onValueChange = { dueDate = it },
                     label = { Text("Due Date (YYYY-MM-DD)") },
                     singleLine = true,
+                    // FIX-19: Show error when date format is invalid
+                    isError = dueDate.isNotBlank() &&
+                        runCatching { java.time.LocalDate.parse(dueDate) }.isFailure,
+                    supportingText = if (dueDate.isNotBlank() &&
+                        runCatching { java.time.LocalDate.parse(dueDate) }.isFailure
+                    ) {
+                        { Text("Use format YYYY-MM-DD, e.g. 2025-06-15") }
+                    } else null,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
@@ -687,7 +696,10 @@ fun CreditCardDueDialog(
                         reminderWhatsApp
                     )
                 },
-                enabled = dueAmount.toDoubleOrNull() != null && dueDate.isNotBlank()
+                // FIX-19: Validate date format — must parse as a valid LocalDate
+                enabled = dueAmount.toDoubleOrNull() != null &&
+                    dueDate.isNotBlank() &&
+                    runCatching { java.time.LocalDate.parse(dueDate) }.isSuccess
             ) {
                 Text("Save")
             }

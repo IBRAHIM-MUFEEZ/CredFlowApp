@@ -267,7 +267,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit
 ) {
     val totalUsed = cards.sumOf { it.bill }
-    val totalPaid = cards.sumOf { it.pending }
+    // totalPaid = what customers have paid = total used minus what is still outstanding
+    // (cards.pending is the owner's own payments to the bank, not customer payments)
+    val totalPaid = cards.sumOf { (it.bill - it.payable).coerceAtLeast(0.0) }
     val totalBalance = cards.sumOf { it.payable }
 
     // Compute per-account breakdowns from customer transactions:
@@ -487,8 +489,37 @@ fun HomeScreen(
                     emiOutstanding = emiOutstandingByAccount[card.id] ?: 0.0
                 )
             }
+            // FIX-20: Show "Show all" link when list is truncated
+            if (activityCards.size > 6) {
+                item {
+                    androidx.compose.material3.TextButton(
+                        onClick = { /* no-op: user can switch to Accounts tab */ },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Showing 6 of ${activityCards.size} accounts — open Accounts tab to see all",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
             items(activityPersons.take(6), key = { "person_${it.personId}" }) { person ->
                 HomePersonCard(person = person)
+            }
+            if (activityPersons.size > 6) {
+                item {
+                    androidx.compose.material3.TextButton(
+                        onClick = { },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Showing 6 of ${activityPersons.size} persons — open Accounts tab to see all",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }

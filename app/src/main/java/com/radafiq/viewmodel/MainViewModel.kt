@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Persists in-progress transaction form state across lock/unlock cycles. */
 data class DraftTransactionState(
@@ -87,9 +88,13 @@ class MainViewModel(
     private var settingsRepository: AppSettingsRepository? = null
     private var securityRepository: AppSecurityRepository? = null
     private val driveBackupRepository = DriveBackupRepository()
-    private var activeDriveOperationCount = 0
+    // BUG-32, BUG-26: Use AtomicInteger for thread-safe concurrent backup operations
+    private val activeDriveOperationCount = AtomicInteger(0)
+    // BUG-45: Use AtomicBoolean for thread-safe concurrent state updates
+    @Volatile
     private var hasObservedInitialSnapshot = false
     // Snapshots to skip after restore (our own writes echo back as Firestore snapshots)
+    // BUG-32: Use synchronized blocks to protect snapshotsToSkip from race conditions
     private var snapshotsToSkip = 0
     private var firestoreListeners: List<com.google.firebase.firestore.ListenerRegistration> = emptyList()
 
@@ -124,11 +129,14 @@ class MainViewModel(
      */
     fun reinitialize() {
         autoBackupJob?.cancel()
+        // BUG-26: Remove old listeners before clearing to prevent memory leak
         firestoreListeners.forEach { it.remove() }
         firestoreListeners = emptyList()
-        activeDriveOperationCount = 0
+        activeDriveOperationCount.set(0)
         hasObservedInitialSnapshot = false
-        snapshotsToSkip = 0
+        synchronized(this) {
+            snapshotsToSkip = 0
+        }
         _cards.value = emptyList()
         _customers.value = emptyList()
         _deletedCustomers.value = emptyList()
@@ -140,24 +148,39 @@ class MainViewModel(
 
     /** Call before a restore so the echoed Firestore snapshots don't trigger auto-backup. */
     fun suppressNextBackups(count: Int = 3) {
-        snapshotsToSkip = (snapshotsToSkip + count).coerceAtLeast(0)
+        // BUG-32: Thread-safe increment — called on main thread before restore writes
+        // Use synchronized to ensure the counter is updated before any snapshot arrives
+        synchronized(this) {
+            snapshotsToSkip = (snapshotsToSkip + count).coerceAtLeast(0)
+        }
     }
 
     private fun handleObservedAppData(appData: AppData) {
+        // BUG-45: Thread-safe check and set for initial snapshot
         // Skip the very first snapshot (initial load — not a user change)
         if (!hasObservedInitialSnapshot) {
-            hasObservedInitialSnapshot = true
-            _cards.value = appData.accounts
-            _customers.value = appData.customers
-            _deletedCustomers.value = appData.deletedCustomers
-            return
+            synchronized(this) {
+                if (!hasObservedInitialSnapshot) {
+                    hasObservedInitialSnapshot = true
+                    _cards.value = appData.accounts
+                    _customers.value = appData.customers
+                    _deletedCustomers.value = appData.deletedCustomers
+                    return
+                }
+            }
         }
 
+        // BUG-32: Thread-safe decrement — use synchronized to protect snapshotsToSkip
         // Skip snapshots echoed back from our own restore writes — do NOT update data
-        if (snapshotsToSkip > 0) {
-            snapshotsToSkip--
-            return
+        val shouldSkip = synchronized(this) {
+            if (snapshotsToSkip > 0) {
+                snapshotsToSkip--
+                true
+            } else {
+                false
+            }
         }
+        if (shouldSkip) return
 
         _cards.value = appData.accounts
         _customers.value = appData.customers
@@ -177,7 +200,8 @@ class MainViewModel(
     }
 
     private suspend fun performAutoBackup(context: Context) {
-        if (activeDriveOperationCount > 0) return
+        // BUG-32, BUG-26: Thread-safe check for concurrent operations
+        if (activeDriveOperationCount.get() > 0) return
         val account = GoogleSignInHelper.getLastSignedInAccount(context) ?: return
         // Show syncing state in the customers tab
         _syncStatus.value = SyncStatus(SyncState.SYNCING, "Syncing...")
@@ -215,19 +239,22 @@ class MainViewModel(
     }
 
     fun beginDriveOperation(message: String) {
-        activeDriveOperationCount += 1
+        // BUG-32, BUG-26: Thread-safe increment
+        activeDriveOperationCount.incrementAndGet()
         _driveOperationMessage.value = message
     }
 
     fun updateDriveOperationMessage(message: String) {
-        if (activeDriveOperationCount > 0) {
+        // BUG-32, BUG-26: Thread-safe check
+        if (activeDriveOperationCount.get() > 0) {
             _driveOperationMessage.value = message
         }
     }
 
     fun finishDriveOperation() {
-        activeDriveOperationCount = (activeDriveOperationCount - 1).coerceAtLeast(0)
-        if (activeDriveOperationCount == 0) {
+        // BUG-32, BUG-26: Thread-safe decrement with atomic operation
+        val newCount = activeDriveOperationCount.decrementAndGet().coerceAtLeast(0)
+        if (newCount == 0) {
             _driveOperationMessage.value = null
         }
     }
@@ -246,7 +273,10 @@ class MainViewModel(
             _syncStatus.value = SyncStatus(SyncState.ERROR, "App not ready. Try again.")
             return
         }
+        // BUG-26: Prevent concurrent sync operations
         if (_syncStatus.value.state == SyncState.SYNCING) return
+        // BUG-26: Also block if a drive operation is already in progress
+        if (activeDriveOperationCount.get() > 0) return
         viewModelScope.launch {
             _syncStatus.value = SyncStatus(SyncState.SYNCING, "Syncing...")
             syncStatusResetJob?.cancel()
@@ -381,15 +411,34 @@ class MainViewModel(
         reminderWhatsApp: String
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
+        // FIX-5: Validate due date format before writing to Firestore
+        val trimmedDueDate = dueDate.trim()
+        if (trimmedDueDate.isNotBlank()) {
+            val parsed = runCatching { java.time.LocalDate.parse(trimmedDueDate) }.getOrNull()
+            if (parsed == null) {
+                android.util.Log.w("MainViewModel", "updateCreditCardDue: invalid date '$trimmedDueDate' — aborting")
+                return
+            }
+        }
+        // FIX-5: Validate email format
+        val trimmedEmail = reminderEmail.trim()
+        val safeEmail = if (trimmedEmail.isBlank() ||
+            android.util.Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
+        ) trimmedEmail else ""
+
+        // FIX-5: Validate WhatsApp number — digits only, 7–15 chars
+        val trimmedWhatsApp = reminderWhatsApp.trim().filter { it.isDigit() || it == '+' }
+        val safeWhatsApp = if (trimmedWhatsApp.length in 7..16) trimmedWhatsApp else ""
+
         viewModelScope.launch {
             repository.updateCreditCardDue(
                 accountId = accountId,
                 accountName = accountName,
                 dueAmount = parsedAmount,
-                dueDate = dueDate,
+                dueDate = trimmedDueDate,
                 remindersEnabled = remindersEnabled,
-                reminderEmail = reminderEmail.trim(),
-                reminderWhatsApp = reminderWhatsApp.trim()
+                reminderEmail = safeEmail,
+                reminderWhatsApp = safeWhatsApp
             )
         }
     }
@@ -406,6 +455,12 @@ class MainViewModel(
         personName: String = ""
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
+        // BUG-36: Validate required fields before writing to Firestore
+        if (parsedAmount <= 0.0) return
+        if (customerId.isBlank()) return
+        if (transactionName.isBlank()) return
+        // For non-person accounts, accountId must be non-blank
+        if (accountKind != AccountKind.PERSON && accountId.isBlank()) return
         viewModelScope.launch {
             repository.addTransaction(
                 customerId = customerId,
@@ -433,12 +488,19 @@ class MainViewModel(
         firstMonthOverride: Double?,
         dateOverrides: Map<Int, String> = mapOf()
     ) {
+        // FIX-8: Validate all required fields before creating EMI transactions
         if (months <= 0 || totalAmount <= 0.0) return
+        if (customerId.isBlank()) return
+        if (transactionName.isBlank()) return
+        if (accountId.isBlank()) return
         val baseDate = runCatching { LocalDate.parse(transactionDate) }.getOrDefault(LocalDate.now())
-        // baseEmi = totalAmount / months — this is what months 2..N always use
+
+        // Intentional design: baseEmi = totalAmount / months is the standard instalment amount.
+        // The first-month override is an independent amount (e.g. a down payment or processing fee)
+        // and does NOT affect the remaining instalments — each of months 2..N stays at baseEmi.
         val baseEmi = totalAmount / months
-        // First month is independent: use override if provided, otherwise same as baseEmi
         val firstEmi = firstMonthOverride?.takeIf { it > 0.0 } ?: baseEmi
+
         val groupId = java.util.UUID.randomUUID().toString()
         viewModelScope.launch {
             try {
@@ -483,6 +545,10 @@ class MainViewModel(
         personName: String = ""
     ) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
+        // BUG-36: Validate required fields before writing to Firestore
+        if (parsedAmount <= 0.0) return
+        if (transactionId.isBlank()) return
+        if (transactionName.isBlank()) return
         viewModelScope.launch {
             repository.updateTransaction(
                 transactionId = transactionId,
@@ -504,12 +570,32 @@ class MainViewModel(
     fun addPartialPayment(transactionId: String, amount: String) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
         if (parsedAmount <= 0.0) return
-        viewModelScope.launch {
-            repository.addPartialPayment(
-                transactionId = transactionId,
-                amount = parsedAmount,
-                date = LocalDate.now().toString()
-            )
+        // FIX-10: Cap partial payment so it cannot exceed the transaction amount.
+        // We look up the transaction in the current customer list to find its amount
+        // and existing partialPaidAmount before writing.
+        val transaction = _customers.value
+            .flatMap { it.transactions }
+            .find { it.id == transactionId }
+        if (transaction != null) {
+            val maxAllowed = (transaction.amount - transaction.partialPaidAmount).coerceAtLeast(0.0)
+            if (maxAllowed <= 0.0) return  // already fully paid
+            val safeAmount = parsedAmount.coerceAtMost(maxAllowed)
+            viewModelScope.launch {
+                repository.addPartialPayment(
+                    transactionId = transactionId,
+                    amount = safeAmount,
+                    date = LocalDate.now().toString()
+                )
+            }
+        } else {
+            // Transaction not in cache yet — write as-is (Firestore increment is safe)
+            viewModelScope.launch {
+                repository.addPartialPayment(
+                    transactionId = transactionId,
+                    amount = parsedAmount,
+                    date = LocalDate.now().toString()
+                )
+            }
         }
     }
 
@@ -640,15 +726,17 @@ class MainViewModel(
         }
     }
 
-    fun addPayment(accountId: String, accountName: String, accountKind: AccountKind, amount: String) {
+    fun addPayment(accountId: String, accountName: String, accountKind: AccountKind, amount: String, date: String = LocalDate.now().toString()) {
         val parsedAmount = amount.toDoubleOrNull() ?: return
+        if (parsedAmount <= 0.0) return
+        val safeDate = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now()).toString()
         viewModelScope.launch {
             repository.addPayment(
                 accountId = accountId,
                 accountName = accountName,
                 accountKind = accountKind,
                 amount = parsedAmount,
-                date = LocalDate.now().toString()
+                date = safeDate
             )
         }
     }

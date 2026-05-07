@@ -44,7 +44,6 @@ export default function SavingsPage() {
     customer.savingsEntries.forEach(e => {
       if (!e.bankAccountId) return;
       const existing = map.get(e.bankAccountId);
-      const delta = e.type === 'deposit' ? e.amount : -e.amount;
       if (existing) {
         if (e.type === 'deposit') existing.deposited += e.amount;
         else existing.withdrawn += e.amount;

@@ -305,10 +305,13 @@ class StatementGenerator(private val context: Context) {
         regular: Typeface,
         bold: Typeface
     ): Int {
+        // FIX-11: "Customer Paid" should reflect actual payments (settled + partial),
+        // not the manually-entered creditDueAmount field.
+        val actualPaid = customer.settledTransactionAmount + customer.partialPaidAmount
         val boxes = listOf(
             Triple("Total Used",    formatMoney(customer.totalAmount),    PRIMARY),
-            Triple("Customer Paid", formatMoney(customer.creditDueAmount), GREEN_BRAND),
-            Triple("Balance Due",   formatMoney(customer.balance),         if (customer.balance > 0) RED_ACCENT else GREEN_BRAND)
+            Triple("Customer Paid", formatMoney(actualPaid),              GREEN_BRAND),
+            Triple("Balance Due",   formatMoney(customer.balance),        if (customer.balance > 0) RED_ACCENT else GREEN_BRAND)
         )
         return drawMetricBoxRow(canvas, boxes, pageWidth, startY, regular, bold)
     }

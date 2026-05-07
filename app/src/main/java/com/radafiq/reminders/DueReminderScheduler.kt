@@ -25,10 +25,22 @@ class DueReminderScheduler(
 
         val parsedDueDate = runCatching { LocalDate.parse(dueDate) }.getOrNull() ?: return
         val now = LocalDateTime.now()
-        val startDate = parsedDueDate.minusDays(5)
+        val today = now.toLocalDate()
 
-        generateSequence(startDate) { current ->
-            if (!current.isAfter(parsedDueDate)) current.plusDays(1) else null
+        // FIX-12: Cap reminder window to 30 days from today to prevent scheduling
+        // hundreds of WorkManager jobs when a due date is set far in the future.
+        val effectiveStartDate = parsedDueDate.minusDays(5).let { start ->
+            if (start.isBefore(today)) today else start
+        }
+        val effectiveEndDate = parsedDueDate.let { end ->
+            val maxEnd = today.plusDays(30)
+            if (end.isAfter(maxEnd)) maxEnd else end
+        }
+
+        if (effectiveStartDate.isAfter(effectiveEndDate)) return
+
+        generateSequence(effectiveStartDate) { current ->
+            if (!current.isAfter(effectiveEndDate)) current.plusDays(1) else null
         }.forEach { reminderDate ->
             val reminderTime = reminderDate.atTime(9, 0)
             if (reminderTime.isBefore(now)) return@forEach

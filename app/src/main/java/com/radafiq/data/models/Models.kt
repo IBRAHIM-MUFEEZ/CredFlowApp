@@ -205,11 +205,23 @@ data class CustomerTransaction(
     }
 
     fun isVisibleInTransactions(referenceDate: LocalDate = LocalDate.now()): Boolean {
-        return !isScheduledForFutureMonth(referenceDate)
+        if (!isEmi) return true
+        // Rule 1: transaction date is current month or past
+        if (!isScheduledForFutureMonth(referenceDate)) return true
+        // Rule 2: due date is within 20 days — show early so user can prepare
+        if (dueDate.isNotBlank()) {
+            val due = runCatching { LocalDate.parse(dueDate) }.getOrNull()
+            if (due != null && !due.isAfter(referenceDate.plusDays(20))) return true
+        }
+        return false
     }
 
+    /** True if this transaction's due date is today or in the past and it is not settled. */
     val isDueToday: Boolean get() {
-        return isVisibleInTransactions()
+        if (isSettled) return false
+        if (dueDate.isBlank()) return false
+        val due = runCatching { LocalDate.parse(dueDate) }.getOrNull() ?: return false
+        return !due.isAfter(LocalDate.now())
     }
 }
 

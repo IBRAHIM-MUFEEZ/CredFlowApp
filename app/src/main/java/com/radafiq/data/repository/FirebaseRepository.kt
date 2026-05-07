@@ -359,31 +359,56 @@ class FirebaseRepository(
             }
         }
 
-        val r1 = root.collection("customers").addSnapshotListener { snap, _ ->
+        val r1 = root.collection("customers").addSnapshotListener { snap, error ->
+            // BUG-31: Check for Firestore errors before processing snapshot
+            if (error != null) {
+                android.util.Log.w("FirebaseRepository", "Customers listener error: ${error.localizedMessage}", error)
+                return@addSnapshotListener
+            }
             latestCustomers = snap?.documents.orEmpty()
             customersReady = true
             notifyIfReady()
         }
 
-        val r2 = root.collection("accounts").addSnapshotListener { snap, _ ->
+        val r2 = root.collection("accounts").addSnapshotListener { snap, error ->
+            // BUG-31: Check for Firestore errors before processing snapshot
+            if (error != null) {
+                android.util.Log.w("FirebaseRepository", "Accounts listener error: ${error.localizedMessage}", error)
+                return@addSnapshotListener
+            }
             latestAccounts = snap?.documents.orEmpty()
             accountsReady = true
             notifyIfReady()
         }
 
-        val r3 = root.collection("transactions").addSnapshotListener { snap, _ ->
+        val r3 = root.collection("transactions").addSnapshotListener { snap, error ->
+            // BUG-31: Check for Firestore errors before processing snapshot
+            if (error != null) {
+                android.util.Log.w("FirebaseRepository", "Transactions listener error: ${error.localizedMessage}", error)
+                return@addSnapshotListener
+            }
             latestTransactions = snap?.documents.orEmpty()
             transactionsReady = true
             notifyIfReady()
         }
 
-        val r4 = root.collection("payments").addSnapshotListener { snap, _ ->
+        val r4 = root.collection("payments").addSnapshotListener { snap, error ->
+            // BUG-31: Check for Firestore errors before processing snapshot
+            if (error != null) {
+                android.util.Log.w("FirebaseRepository", "Payments listener error: ${error.localizedMessage}", error)
+                return@addSnapshotListener
+            }
             latestPayments = snap?.documents.orEmpty()
             paymentsReady = true
             notifyIfReady()
         }
 
-        val r5 = root.collection("savings").addSnapshotListener { snap, _ ->
+        val r5 = root.collection("savings").addSnapshotListener { snap, error ->
+            // BUG-31: Check for Firestore errors before processing snapshot
+            if (error != null) {
+                android.util.Log.w("FirebaseRepository", "Savings listener error: ${error.localizedMessage}", error)
+                return@addSnapshotListener
+            }
             latestSavings = snap?.documents.orEmpty()
             savingsReady = true
             notifyIfReady()
@@ -673,7 +698,8 @@ class FirebaseRepository(
                     ?: transaction.getString("givenDate") ?: ""
                 val isFutureEmi = isFutureScheduledEmi(
                     transactionDate = transactionDateStr,
-                    emiGroupId = emiGroupId
+                    emiGroupId = emiGroupId,
+                    dueDate = transaction.getString("dueDate").orEmpty()
                 )
 
                 if (!isDeleted && !isFutureEmi) {
@@ -811,9 +837,8 @@ class FirebaseRepository(
 
     private fun RunningCustomerTotal.toSummary(): CustomerSummary {
         // totalAmount already excludes future EMIs (set in buildAppData)
-        val visibleTxns = transactions.filter { t ->
-            if (!t.isEmi) true else !t.isScheduledForFutureMonth()
-        }
+        // Use isVisibleInTransactions() which includes the 20-day early-show rule
+        val visibleTxns = transactions.filter { t -> t.isVisibleInTransactions() }
         // For settled transactions: count the full amount (partial is subsumed by settlement)
         // For unsettled transactions: count only partial paid amount
         val totalPartialPaid = visibleTxns
@@ -893,10 +918,17 @@ class FirebaseRepository(
     private fun isFutureScheduledEmi(
         transactionDate: String,
         emiGroupId: String,
+        dueDate: String = "",
         referenceDate: LocalDate = LocalDate.now()
     ): Boolean {
         if (emiGroupId.isBlank()) return false
         val installmentDate = runCatching { LocalDate.parse(transactionDate) }.getOrNull() ?: return false
-        return YearMonth.from(installmentDate).isAfter(YearMonth.from(referenceDate))
+        if (!YearMonth.from(installmentDate).isAfter(YearMonth.from(referenceDate))) return false
+        // Show early if due date is within 20 days
+        if (dueDate.isNotBlank()) {
+            val due = runCatching { LocalDate.parse(dueDate) }.getOrNull()
+            if (due != null && !due.isAfter(referenceDate.plusDays(20))) return false
+        }
+        return true
     }
 }

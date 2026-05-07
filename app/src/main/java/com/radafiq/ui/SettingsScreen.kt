@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -138,7 +139,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = onEditProfile,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.wrapContentWidth()
                         ) {
                             Text("Edit Profile")
                         }
@@ -184,7 +185,7 @@ fun SettingsScreen(
 
                         Button(
                             onClick = onOpenSecuritySetup,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.wrapContentWidth()
                         ) {
                             Text(if (securityState.hasPasscode) "Change Passcode" else "Set Passcode")
                         }
@@ -360,7 +361,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedButton(
                             onClick = { showLogoutConfirm = true },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.wrapContentWidth(),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
                             ),

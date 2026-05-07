@@ -99,6 +99,10 @@ class AppSecurityRepository(context: Context) {
             .remove(KEY_PASSCODE_HASH)
             .remove(KEY_RECOVERY_QUESTION)
             .remove(KEY_RECOVERY_ANSWER_HASH)
+            .remove(KEY_PASSCODE_SALT)
+            .remove(KEY_RECOVERY_ANSWER_SALT)
+            .remove(KEY_FAILED_ATTEMPTS)
+            .remove(KEY_LOCKED_UNTIL_MS)
             .putBoolean(KEY_LOCK_ENABLED, false)
             .putBoolean(KEY_BIOMETRIC_ENABLED, false)
             .apply()
@@ -137,12 +141,52 @@ class AppSecurityRepository(context: Context) {
     }
 
     fun verifyPasscode(passcode: String): Boolean {
+        // FIX-2: Brute-force rate limiting — track failed attempts with exponential back-off.
+        val attempts = preferences.getInt(KEY_FAILED_ATTEMPTS, 0)
+        val lockedUntil = preferences.getLong(KEY_LOCKED_UNTIL_MS, 0L)
+        val now = System.currentTimeMillis()
+
+        if (now < lockedUntil) {
+            // Still locked out — reject immediately without checking the passcode
+            return false
+        }
+
         val matches = matchesPasscode(passcode)
         if (matches) {
+            // Reset failure counter on success
+            preferences.edit()
+                .remove(KEY_FAILED_ATTEMPTS)
+                .remove(KEY_LOCKED_UNTIL_MS)
+                .apply()
             unlock()
+        } else {
+            val newAttempts = attempts + 1
+            // Lockout durations: 5 fails→30s, 7 fails→2min, 10+ fails→10min
+            val lockDurationMs = when {
+                newAttempts >= 10 -> 10 * 60 * 1000L
+                newAttempts >= 7  ->  2 * 60 * 1000L
+                newAttempts >= 5  ->      30 * 1000L
+                else              -> 0L
+            }
+            preferences.edit()
+                .putInt(KEY_FAILED_ATTEMPTS, newAttempts)
+                .putLong(KEY_LOCKED_UNTIL_MS, if (lockDurationMs > 0) now + lockDurationMs else 0L)
+                .apply()
         }
         return matches
     }
+
+    /**
+     * Returns how many milliseconds remain in the current lockout period, or 0 if not locked.
+     * UI can call this to show a countdown to the user.
+     */
+    fun lockoutRemainingMs(): Long {
+        val lockedUntil = preferences.getLong(KEY_LOCKED_UNTIL_MS, 0L)
+        return (lockedUntil - System.currentTimeMillis()).coerceAtLeast(0L)
+    }
+
+    /** Returns the current failed-attempt count (for UI display). */
+    fun failedAttemptCount(): Int = preferences.getInt(KEY_FAILED_ATTEMPTS, 0)
 
     fun resetPasscodeWithRecovery(
         recoveryAnswer: String,
@@ -299,7 +343,9 @@ class AppSecurityRepository(context: Context) {
     }
 
     private fun hashRecoveryAnswer(answer: String): String {
-        return pbkdf2("recovery:$answer", getOrCreateSalt())
+        // FIX-3: Use a separate salt for the recovery answer so it cannot be attacked
+        // together with the passcode even if the passcode salt is known.
+        return pbkdf2("recovery:$answer", getOrCreateRecoverySalt())
     }
 
     private fun legacyHashPasscode(passcode: String): String {
@@ -310,6 +356,7 @@ class AppSecurityRepository(context: Context) {
     }
 
     private fun legacyHashRecoveryAnswer(answer: String): String {
+        // Legacy: used the passcode salt — kept only for migration
         val salt = preferences.getString(KEY_PASSCODE_SALT, null).orEmpty()
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest("$salt:recovery:$answer".toByteArray())
@@ -322,6 +369,17 @@ class AppSecurityRepository(context: Context) {
             SecureRandom().nextBytes(bytes)
             val newSalt = bytes.toHex()
             preferences.edit().putString(KEY_PASSCODE_SALT, newSalt).apply()
+            newSalt
+        }
+    }
+
+    // FIX-3: Separate salt for recovery answer
+    private fun getOrCreateRecoverySalt(): String {
+        return preferences.getString(KEY_RECOVERY_ANSWER_SALT, null) ?: run {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            val newSalt = bytes.toHex()
+            preferences.edit().putString(KEY_RECOVERY_ANSWER_SALT, newSalt).apply()
             newSalt
         }
     }
@@ -369,8 +427,34 @@ class AppSecurityRepository(context: Context) {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        }.getOrElse {
-            context.getSharedPreferences(ENCRYPTED_PREFERENCES_NAME, Context.MODE_PRIVATE)
+        }.getOrElse { e ->
+            // FIX-1: Log the failure so it is visible in crash reports.
+            // We do NOT silently fall back to plain SharedPreferences — instead we
+            // attempt a keystore key rotation (delete + recreate) and retry once.
+            android.util.Log.e("AppSecurity", "EncryptedSharedPreferences creation failed: ${e.localizedMessage}", e)
+            runCatching {
+                // Attempt key rotation: delete the old master key and recreate
+                val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                if (keyStore.containsAlias(MasterKeys.AES256_GCM_SPEC.keystoreAlias)) {
+                    keyStore.deleteEntry(MasterKeys.AES256_GCM_SPEC.keystoreAlias)
+                }
+                // Also delete the corrupted prefs file so it can be recreated cleanly
+                context.deleteSharedPreferences(ENCRYPTED_PREFERENCES_NAME)
+                val newMasterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+                EncryptedSharedPreferences.create(
+                    ENCRYPTED_PREFERENCES_NAME,
+                    newMasterKeyAlias,
+                    context,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            }.getOrElse { e2 ->
+                // Key rotation also failed — this device's keystore is broken.
+                // Security is degraded; log prominently and use plain prefs as last resort.
+                android.util.Log.e("AppSecurity", "Key rotation failed — security degraded: ${e2.localizedMessage}", e2)
+                context.getSharedPreferences(ENCRYPTED_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            }
         }
     }
 
@@ -401,10 +485,13 @@ class AppSecurityRepository(context: Context) {
         const val ENCRYPTED_PREFERENCES_NAME = "radafiq_security_secure"
         const val KEY_PASSCODE_HASH = "passcode_hash"
         const val KEY_PASSCODE_SALT = "passcode_salt"
+        const val KEY_RECOVERY_ANSWER_SALT = "recovery_answer_salt"   // FIX-3: separate salt
         const val KEY_LOCK_ENABLED = "lock_enabled"
         const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
         const val KEY_RECOVERY_QUESTION = "recovery_question"
         const val KEY_RECOVERY_ANSWER_HASH = "recovery_answer_hash"
+        const val KEY_FAILED_ATTEMPTS = "failed_attempts"              // FIX-2: brute-force counter
+        const val KEY_LOCKED_UNTIL_MS = "locked_until_ms"             // FIX-2: lockout timestamp
         const val PASSCODE_LENGTH = 6
         const val MIN_RECOVERY_ANSWER_LENGTH = 3
         const val PBKDF2_ITERATIONS = 150_000

@@ -42,10 +42,18 @@ class DueReminderWorker(
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         
-        // Use accountId (stable UUID) instead of accountName to avoid collisions
-        val notificationId = (accountId + dueDate + daysLeft).hashCode().let {
-            if (it == Int.MIN_VALUE) Int.MAX_VALUE else Math.abs(it)
-        }
+        // FIX-13: Use a stable, collision-resistant notification ID.
+        // Combine accountId + dueDate + daysLeft into a deterministic but unique integer
+        // using a better hash that avoids the 32-bit String.hashCode() collision space.
+        val idSource = "$accountId|$dueDate|$daysLeft"
+        val notificationId = run {
+            val digest = java.security.MessageDigest.getInstance("MD5").digest(idSource.toByteArray())
+            // Take first 4 bytes as a positive int
+            ((digest[0].toInt() and 0xFF) shl 24) or
+            ((digest[1].toInt() and 0xFF) shl 16) or
+            ((digest[2].toInt() and 0xFF) shl 8)  or
+             (digest[3].toInt() and 0xFF)
+        }.let { if (it == Int.MIN_VALUE) Int.MAX_VALUE else Math.abs(it) }
         
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,

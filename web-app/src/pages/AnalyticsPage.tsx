@@ -14,7 +14,9 @@ const METRICS: { value: Metric; label: string }[] = [
 function cardMetricValue(card: CardSummary, metric: Metric): number {
   switch (metric) {
     case 'USAGE': return card.bill;
-    case 'PAID': return card.pending;
+    // card.pending = owner's own bank payments (not customer-paid)
+    // customer-paid = bill - payable (what's been collected from customers)
+    case 'PAID': return Math.max(0, card.bill - card.payable);
     case 'OUTSTANDING': return card.payable;
   }
 }

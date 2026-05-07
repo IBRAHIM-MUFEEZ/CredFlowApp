@@ -56,7 +56,8 @@ fun AnalyticsScreen(
     onOpenSettings: () -> Unit = {}
 ) {
     val totalUsed = cards.sumOf { it.bill }
-    val totalPaid = cards.sumOf { it.pending }
+    // BUG-39: Use customer-paid amount (bill - payable) not owner's personal payments (pending)
+    val totalPaid = cards.sumOf { (it.bill - it.payable).coerceAtLeast(0.0) }
     val totalBalance = cards.sumOf { it.payable }
 
     val availableKinds = remember(cards) { cards.map { it.accountKind }.distinct() }
@@ -152,7 +153,8 @@ fun AnalyticsScreen(
 @Composable
 fun SummaryCard(cards: List<CardSummary>) {
     val totalUsed = cards.sumOf { it.bill }
-    val totalPaid = cards.sumOf { it.pending }
+    // BUG-30: Use customer-paid amount (bill - payable) not owner's personal payments (pending)
+    val totalPaid = cards.sumOf { (it.bill - it.payable).coerceAtLeast(0.0) }
     val totalBalance = cards.sumOf { it.payable }
 
     FlowCard(accentColor = MaterialTheme.colorScheme.primary) {
@@ -501,7 +503,8 @@ private fun cardMetricValue(
 ): Double {
     return when (metric) {
         AnalyticsMetric.USAGE -> card.bill
-        AnalyticsMetric.PAID -> card.pending
+        // BUG-30: Use customer-paid amount (bill - payable) not owner's personal payments (pending)
+        AnalyticsMetric.PAID -> (card.bill - card.payable).coerceAtLeast(0.0)
         AnalyticsMetric.OUTSTANDING -> card.payable
     }
 }

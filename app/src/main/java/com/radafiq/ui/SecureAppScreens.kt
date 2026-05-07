@@ -220,13 +220,22 @@ fun ProfileSetupScreen(
                     label = { Text("Email") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    // FIX-4: Show error when email format is invalid
+                    isError = email.isNotBlank() &&
+                        !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches(),
+                    supportingText = if (email.isNotBlank() &&
+                        !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+                    ) {
+                        { Text("Enter a valid email address") }
+                    } else null,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = { onSave(displayName, businessName, email, photoUrl) },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = displayName.isNotBlank() && businessName.isNotBlank()
+                    enabled = displayName.isNotBlank() && businessName.isNotBlank() &&
+                        (email.isBlank() || android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches())
                 ) {
                     Text("Save Profile")
                 }
@@ -814,6 +823,7 @@ fun AppLockScreen(
                             if (passcode.length == 6) {
                                 val unlocked = onUnlockWithPasscode(passcode)
                                 if (!unlocked && passcode.length == 6) {
+                                    // FIX-2: Show lockout message if the account is locked out
                                     localError = "Incorrect passcode."
                                     passcode = ""
                                 }

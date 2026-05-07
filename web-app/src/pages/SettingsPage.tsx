@@ -154,7 +154,7 @@ export default function SettingsPage() {
           <>
             <div className="font-semibold" style={{ fontSize: '1rem' }}>{profile?.displayName || 'Profile not set up'}</div>
             <div className="text-muted text-sm" style={{ marginTop: 2 }}>{profile?.businessName || 'Add your business details'}</div>
-            <button className="btn btn-primary btn-full" style={{ marginTop: '0.875rem' }} onClick={() => {
+            <button className="btn btn-primary" style={{ marginTop: '0.875rem', display: 'inline-block' }} onClick={() => {
               setDisplayName(profile?.displayName ?? '');
               setBusinessName(profile?.businessName ?? '');
               setEmail(profile?.email ?? '');
@@ -188,34 +188,35 @@ export default function SettingsPage() {
           </label>
         </div>
 
-        <button
-          className="btn btn-primary btn-full"
-          style={{ marginTop: '0.875rem' }}
-          onClick={() => {
-            if (security.hasPasscode) {
-              setCurrentPasscode('');
-              setPasscodeVal('');
-              setConfirmPasscode('');
-              setRecoveryAnswer('');
-              setPasscodeError('');
-              setShowChangePasscode(true);
-            } else {
-              setPasscodeVal('');
-              setConfirmPasscode('');
-              setRecoveryAnswer('');
-              setPasscodeError('');
-              setShowPasscodeSetup(true);
-            }
-          }}
-        >
-          {security.hasPasscode ? 'Change Passcode' : 'Set Passcode'}
-        </button>
-
-        {security.hasPasscode && (
-          <button className="btn btn-outline btn-full" style={{ marginTop: 8 }} onClick={() => setShowRemovePasscodeConfirm(true)}>
-            Remove Passcode
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: '0.875rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              if (security.hasPasscode) {
+                setCurrentPasscode('');
+                setPasscodeVal('');
+                setConfirmPasscode('');
+                setRecoveryAnswer('');
+                setPasscodeError('');
+                setShowChangePasscode(true);
+              } else {
+                setPasscodeVal('');
+                setConfirmPasscode('');
+                setRecoveryAnswer('');
+                setPasscodeError('');
+                setShowPasscodeSetup(true);
+              }
+            }}
+          >
+            {security.hasPasscode ? 'Change Passcode' : 'Set Passcode'}
           </button>
-        )}
+
+          {security.hasPasscode && (
+            <button className="btn btn-outline" onClick={() => setShowRemovePasscodeConfirm(true)}>
+              Remove Passcode
+            </button>
+          )}
+        </div>
 
         {security.hasRecoveryQuestion && (
           <p className="text-muted text-xs" style={{ marginTop: 10 }}>
@@ -259,7 +260,6 @@ export default function SettingsPage() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 className="btn btn-outline btn-sm"
-                style={{ flex: 1 }}
                 onClick={handleRegisterPasskey}
                 disabled={passkeyRegistering}
               >
@@ -275,7 +275,8 @@ export default function SettingsPage() {
             </div>
           ) : (
             <button
-              className="btn btn-primary btn-full"
+              className="btn btn-primary"
+              style={{ display: 'inline-block' }}
               onClick={handleRegisterPasskey}
               disabled={passkeyRegistering || !security.hasPasscode}
               title={!security.hasPasscode ? 'Set a passcode first to enable passkey unlock' : ''}
@@ -396,7 +397,7 @@ export default function SettingsPage() {
         <p className="text-muted text-sm" style={{ marginBottom: '0.875rem' }}>
           Sign out and return to the profile setup screen.
         </p>
-        <button className="btn btn-danger btn-full" onClick={() => setShowLogoutConfirm(true)}>
+        <button className="btn btn-danger" style={{ display: 'inline-block' }} onClick={() => setShowLogoutConfirm(true)}>
           Sign Out
         </button>
       </div>

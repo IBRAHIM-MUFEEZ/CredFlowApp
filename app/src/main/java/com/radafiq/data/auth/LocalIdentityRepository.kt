@@ -2,6 +2,8 @@ package com.radafiq.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
@@ -13,11 +15,21 @@ object LocalIdentityRepository {
     @Volatile
     private var cachedUserId: String? = null
 
+    // FIX-16: Use EncryptedSharedPreferences to protect the user ID (Firestore path key)
     private fun securePreferences(context: Context): SharedPreferences {
-        return context.applicationContext.getSharedPreferences(
-            PREFERENCES_NAME,
-            Context.MODE_PRIVATE
-        )
+        return runCatching {
+            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            EncryptedSharedPreferences.create(
+                PREFERENCES_NAME,
+                masterKeyAlias,
+                context.applicationContext,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            // Fallback to plain prefs if keystore is unavailable (e.g. emulator without keystore)
+            context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        }
     }
 
     /**

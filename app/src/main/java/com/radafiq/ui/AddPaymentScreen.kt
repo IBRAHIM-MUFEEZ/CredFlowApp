@@ -40,8 +40,9 @@ fun AddPaymentScreen(
         mutableStateOf("")
     }
     var amount by remember { mutableStateOf("") }
+    // FIX-18: Allow editing the payment date (default to today)
+    var paymentDate by remember { mutableStateOf(LocalDate.now().toString()) }
 
-    val today = LocalDate.now().toString()
     val accountOptions = remember(selectedKind, selectedAccountIds) {
         IndianAccountCatalog.optionsFor(selectedKind, selectedAccountIds)
     }
@@ -137,11 +138,12 @@ fun AddPaymentScreen(
                         )
 
                         OutlinedTextField(
-                            value = today,
-                            onValueChange = {},
-                            label = { Text("Payment Date") },
+                            value = paymentDate,
+                            onValueChange = { paymentDate = it },
+                            label = { Text("Payment Date (YYYY-MM-DD)") },
                             singleLine = true,
-                            readOnly = true,
+                            isError = paymentDate.isNotBlank() &&
+                                runCatching { LocalDate.parse(paymentDate) }.isFailure,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 20.dp)
@@ -149,18 +151,22 @@ fun AddPaymentScreen(
 
                         Button(
                             onClick = {
+                                val safeDate = runCatching { LocalDate.parse(paymentDate) }
+                                    .getOrDefault(LocalDate.now()).toString()
                                 vm.addPayment(
                                     accountId = selectedAccount.id,
                                     accountName = selectedAccount.name,
                                     accountKind = selectedKind,
-                                    amount = amount
+                                    amount = amount,
+                                    date = safeDate
                                 )
                                 onNavigateBack()
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp),
-                            enabled = (amount.toDoubleOrNull() ?: 0.0) > 0.0
+                            enabled = (amount.toDoubleOrNull() ?: 0.0) > 0.0 &&
+                                runCatching { LocalDate.parse(paymentDate) }.isSuccess
                         ) {
                             Text("Save Payment")
                         }

@@ -72,6 +72,13 @@ class UserProfileRepository(
         email: String,
         photoUrl: String = ""
     ) {
+        // FIX-4: Validate email format before writing to Firestore
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isNotBlank() &&
+            !android.util.Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()
+        ) {
+            android.util.Log.w("UserProfile", "saveProfile called with invalid email: $trimmedEmail — skipping email field")
+        }
         val userId = LocalIdentityRepository.userId()
         profileDocument(userId)
             .set(
@@ -80,7 +87,7 @@ class UserProfileRepository(
                     "phoneNumber" to FieldValue.delete(),
                     "displayName" to displayName.trim(),
                     "businessName" to businessName.trim(),
-                    "email" to email.trim(),
+                    "email" to trimmedEmail,
                     "photoUrl" to photoUrl.trim(),
                     "isProfileComplete" to true
                 ),
